@@ -183,7 +183,7 @@ export default function Dashboard() {
                 <Shield className="h-3.5 w-3.5 text-primary-foreground" />
               </div>
               <span className="font-display text-lg font-extrabold uppercase">
-                Sec<span className="text-neon-green">Git</span>
+                merge<span className="text-neon-green">X</span>
               </span>
               <span className="font-mono text-xs text-muted-foreground">/ Dashboard</span>
             </div>
@@ -411,7 +411,7 @@ export default function Dashboard() {
                       <Brain className="h-4 w-4 text-primary-foreground" />
                     </div>
                     <div>
-                      <div className="font-mono text-sm font-bold uppercase">secgit-agent-001</div>
+                      <div className="font-mono text-sm font-bold uppercase">mergeX-agent-001</div>
                       <div className="font-mono text-xs text-muted-foreground">Reviewing SG-0421</div>
                     </div>
                   </div>
