@@ -1,0 +1,207 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;500;600;700;800&display=swap');
+
+/* SecGit 2026 — Neo-Brutalism Dark Theme */
+
+@layer base {
+  :root {
+    /* Core dark palette */
+    --background: 240 8% 8%;
+    --foreground: 60 10% 92%;
+
+    --card: 240 6% 12%;
+    --card-foreground: 60 10% 90%;
+
+    --popover: 240 6% 12%;
+    --popover-foreground: 60 10% 90%;
+
+    /* Electric green — primary */
+    --primary: 145 80% 42%;
+    --primary-foreground: 240 8% 8%;
+
+    /* Surfaces */
+    --secondary: 240 6% 16%;
+    --secondary-foreground: 60 6% 70%;
+
+    --muted: 240 6% 14%;
+    --muted-foreground: 240 5% 45%;
+
+    /* Cyan accent */
+    --accent: 191 90% 50%;
+    --accent-foreground: 240 8% 8%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 60 10% 82%;
+    --input: 240 6% 16%;
+    --ring: 145 80% 42%;
+
+    --radius: 0px;
+
+    /* Sidebar */
+    --sidebar-background: 240 8% 6%;
+    --sidebar-foreground: 60 6% 80%;
+    --sidebar-primary: 145 80% 42%;
+    --sidebar-primary-foreground: 240 8% 8%;
+    --sidebar-accent: 240 6% 14%;
+    --sidebar-accent-foreground: 60 6% 80%;
+    --sidebar-border: 60 10% 82%;
+    --sidebar-ring: 145 80% 42%;
+
+    /* Brutalist color tokens */
+    --neon-green: 145 80% 42%;
+    --neon-cyan: 191 90% 50%;
+    --neon-amber: 43 95% 56%;
+    --neon-red: 0 72% 51%;
+    --surface-1: 240 6% 12%;
+    --surface-2: 240 6% 16%;
+    --surface-3: 240 6% 20%;
+
+    /* Brutalist hard shadow */
+    --shadow-brutal: 4px 4px 0px hsl(60 10% 82%);
+    --shadow-brutal-sm: 2px 2px 0px hsl(60 10% 82%);
+    --shadow-brutal-green: 4px 4px 0px hsl(145 80% 42%);
+    --shadow-brutal-cyan: 4px 4px 0px hsl(191 90% 50%);
+    --shadow-brutal-amber: 4px 4px 0px hsl(43 95% 56%);
+
+    /* Fonts */
+    --font-mono: 'Space Mono', 'JetBrains Mono', monospace;
+    --font-display: 'Syne', system-ui, sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-display);
+    background-color: hsl(var(--background));
+  }
+
+  code, pre, .mono {
+    font-family: var(--font-mono);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+}
+
+@layer utilities {
+  /* Neon text */
+  .text-neon-green { color: hsl(var(--neon-green)); }
+  .text-neon-cyan { color: hsl(var(--neon-cyan)); }
+  .text-neon-amber { color: hsl(var(--neon-amber)); }
+  .text-neon-red { color: hsl(var(--neon-red)); }
+
+  /* Brutalist backgrounds */
+  .bg-neon-green { background-color: hsl(var(--neon-green)); }
+  .bg-neon-cyan { background-color: hsl(var(--neon-cyan)); }
+  .bg-neon-amber { background-color: hsl(var(--neon-amber)); }
+  .bg-neon-red { background-color: hsl(var(--neon-red)); }
+
+  /* Surface backgrounds */
+  .bg-surface-1 { background-color: hsl(var(--surface-1)); }
+  .bg-surface-2 { background-color: hsl(var(--surface-2)); }
+  .bg-surface-3 { background-color: hsl(var(--surface-3)); }
+
+  /* Hard shadows — neo-brutalism core */
+  .shadow-brutal { box-shadow: var(--shadow-brutal); }
+  .shadow-brutal-sm { box-shadow: var(--shadow-brutal-sm); }
+  .shadow-brutal-green { box-shadow: var(--shadow-brutal-green); }
+  .shadow-brutal-cyan { box-shadow: var(--shadow-brutal-cyan); }
+  .shadow-brutal-amber { box-shadow: var(--shadow-brutal-amber); }
+
+  .shadow-brutal-hover:hover {
+    box-shadow: 6px 6px 0px hsl(60 10% 82%);
+    transform: translate(-2px, -2px);
+  }
+
+  /* Status indicators */
+  .status-dot {
+    @apply h-2.5 w-2.5 rounded-full;
+  }
+  .status-dot-green {
+    background-color: hsl(var(--neon-green));
+  }
+  .status-dot-cyan {
+    background-color: hsl(var(--neon-cyan));
+  }
+  .status-dot-amber {
+    background-color: hsl(var(--neon-amber));
+  }
+
+  /* Mono font helper */
+  .font-mono-custom { font-family: var(--font-mono); }
+
+  /* Brutalist card */
+  .brutal-card {
+    @apply border-2 border-border bg-card;
+    box-shadow: var(--shadow-brutal);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .brutal-card:hover {
+    box-shadow: 6px 6px 0px hsl(60 10% 82%);
+    transform: translate(-2px, -2px);
+  }
+
+  .brutal-card-green {
+    @apply border-2 bg-card;
+    border-color: hsl(var(--neon-green));
+    box-shadow: var(--shadow-brutal-green);
+  }
+
+  .brutal-card-cyan {
+    @apply border-2 bg-card;
+    border-color: hsl(var(--neon-cyan));
+    box-shadow: var(--shadow-brutal-cyan);
+  }
+
+  .brutal-card-amber {
+    @apply border-2 bg-card;
+    border-color: hsl(var(--neon-amber));
+    box-shadow: var(--shadow-brutal-amber);
+  }
+
+  /* Brutalist button base */
+  .brutal-btn {
+    @apply border-2 border-border font-bold uppercase tracking-wider;
+    box-shadow: var(--shadow-brutal-sm);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .brutal-btn:hover {
+    box-shadow: 4px 4px 0px hsl(60 10% 82%);
+    transform: translate(-1px, -1px);
+  }
+  .brutal-btn:active {
+    box-shadow: 0px 0px 0px hsl(60 10% 82%);
+    transform: translate(2px, 2px);
+  }
+
+  /* Terminal blinking cursor */
+  .animate-terminal-blink {
+    animation: blink 1s step-end infinite;
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
