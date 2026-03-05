@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Shield, GitBranch, Eye, Database, Zap, CheckCircle, ArrowRight, Globe, Brain, HardDrive, Lock, ChevronRight, Users, Star, Activity } from "lucide-react";
+import WorldIDVerify from "@/components/WorldIDVerify";
 
 const NAV_LINKS = [
   { label: "How it Works", href: "#how-it-works" },
@@ -116,7 +117,7 @@ const bgColor: Record<string, string> = {
 
 export default function Index() {
   const [terminalText, setTerminalText] = useState("");
-  const fullText = "Initializing SecGit 2026... World ID verified. NEAR agents online. Filecoin storage ready.";
+  const fullText = "Initializing mergeX 2026... World ID verified. NEAR agents online. Filecoin storage ready.";
 
   useEffect(() => {
     let i = 0;
@@ -141,7 +142,7 @@ export default function Index() {
               <Shield className="h-5 w-5 text-primary-foreground" />
             </div>
             <span className="font-display text-xl font-extrabold uppercase tracking-tight">
-              Sec<span className="text-neon-green">Git</span>
+              merge<span className="text-neon-green">X</span>
               <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">2026</span>
             </span>
           </div>
@@ -193,10 +194,10 @@ export default function Index() {
           <h1 className="mb-6 font-display text-6xl font-extrabold uppercase leading-none tracking-tighter md:text-8xl">
             Decentralized
             <br />
-            <span className="text-neon-green">Security</span>{" "}
-            <span className="text-neon-cyan">Bounties</span>
+            <span className="text-neon-green">Open</span>{" "}
+            <span className="text-neon-cyan">Source</span>
             <br />
-            for Human Devs
+            
           </h1>
 
           <p className="mx-auto mb-10 max-w-2xl font-mono text-base text-muted-foreground md:text-lg">
@@ -210,11 +211,11 @@ export default function Index() {
           {/* CTA Buttons */}
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
-              to="/dashboard"
+              to="/add-repo"
               className="brutal-btn group flex items-center gap-2 border-neon-green bg-neon-green px-8 py-4 font-mono text-sm text-primary-foreground"
             >
               <Shield className="h-4 w-4" />
-              Launch Dashboard
+              Add Repo
               <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <a
@@ -244,7 +245,36 @@ export default function Index() {
           </div>
         </div>
       </section>
-
+                  <section className="py-24 border-t-2 border-border bg-surface-1/50">
+        <div className="container mx-auto px-6">
+          <div className="text-center mb-12">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center border-2 border-neon-green bg-neon-green">
+              <Globe className="h-8 w-8 text-primary-foreground" />
+            </div>
+            <h2 className="font-display text-4xl font-extrabold uppercase mb-4">
+              Verify Your <span className="text-neon-green">Humanity</span>
+            </h2>
+            <p className="font-mono text-muted-foreground max-w-2xl mx-auto">
+              Join the verified human ecosystem. Connect your World ID to prove you're human and gain access to mergeX bounties.
+            </p>
+          </div>
+          
+          <div className="max-w-2xl mx-auto">
+            <div className="brutal-card p-8 bg-card border-2 border-border">
+              <React.Suspense 
+                fallback={
+                  <div className="flex flex-col items-center gap-4 p-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neon-green"></div>
+                    <p className="font-mono text-sm text-muted-foreground">Loading World ID verification...</p>
+                  </div>
+                }
+              >
+                <WorldIDVerify />
+              </React.Suspense>
+            </div>
+          </div>
+        </div>
+      </section>
       {/* How It Works */}
       <section id="how-it-works" className="py-24">
         <div className="container mx-auto px-6">
@@ -253,7 +283,7 @@ export default function Index() {
               WORKFLOW
             </span>
             <h2 className="font-display text-5xl font-extrabold uppercase tracking-tighter">
-              How SecGit Works
+              How mergeX Works
             </h2>
             <p className="mt-3 font-mono text-sm text-muted-foreground">End-to-end autonomous security bounties.</p>
           </div>
@@ -375,7 +405,7 @@ export default function Index() {
       </section>
 
       {/* CTA Banner */}
-      <section className="border-y-2 border-border bg-card py-24">
+      {/* <section className="border-y-2 border-border bg-card py-24">
         <div className="container mx-auto px-6 text-center">
           <div className="mx-auto max-w-2xl">
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center border-2 border-neon-green bg-neon-green animate-float">
@@ -399,7 +429,39 @@ export default function Index() {
             </Link>
           </div>
         </div>
-      </section>
+      </section> */}
+
+      {/* World ID Verification Section */}
+      {/* <section className="py-24 border-t-2 border-border bg-surface-1/50">
+        <div className="container mx-auto px-6">
+          <div className="text-center mb-12">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center border-2 border-neon-green bg-neon-green">
+              <Globe className="h-8 w-8 text-primary-foreground" />
+            </div>
+            <h2 className="font-display text-4xl font-extrabold uppercase mb-4">
+              Verify Your <span className="text-neon-green">Humanity</span>
+            </h2>
+            <p className="font-mono text-muted-foreground max-w-2xl mx-auto">
+              Join the verified human ecosystem. Connect your World ID to prove you're human and gain access to mergeX bounties.
+            </p>
+          </div>
+          
+          <div className="max-w-2xl mx-auto">
+            <div className="brutal-card p-8 bg-card border-2 border-border">
+              <React.Suspense 
+                fallback={
+                  <div className="flex flex-col items-center gap-4 p-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neon-green"></div>
+                    <p className="font-mono text-sm text-muted-foreground">Loading World ID verification...</p>
+                  </div>
+                }
+              >
+                <WorldIDVerify />
+              </React.Suspense>
+            </div>
+          </div>
+        </div>
+      </section> */}
 
       {/* Footer */}
       <footer className="border-t-2 border-border py-10">
@@ -409,7 +471,7 @@ export default function Index() {
               <Shield className="h-3 w-3 text-primary-foreground" />
             </div>
             <span className="font-mono text-sm font-bold uppercase">
-              Sec<span className="text-neon-green">Git</span> 2026
+              merge<span className="text-neon-green">X</span> 2026
             </span>
           </div>
           <div className="flex items-center gap-4 font-mono text-xs uppercase tracking-wider text-muted-foreground">

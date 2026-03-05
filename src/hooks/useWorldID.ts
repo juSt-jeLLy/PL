@@ -1,0 +1,83 @@
+import { useState } from "react";
+import { IDKit, deviceLegacy } from "@worldcoin/idkit-core";
+
+const APP_ID = "app_b52cbede146e3f23a5dc57bdb12a630c"; 
+const ACTION = "verify";           
+const SIGNAL = "";                    
+
+type VerifyStatus = "idle" | "loading" | "waiting" | "verifying" | "success" | "error";
+
+export function useWorldID() {
+  const [status, setStatus] = useState<VerifyStatus>("idle");
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<object | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const startVerification = async () => {
+    setStatus("loading");
+    setError(null);
+    setConnectUrl(null);
+    setResult(null);
+
+    try {
+      // Step 1: Get RP signature from backend
+      const rpSig = await fetch("/api/rp-signature", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: ACTION }),
+      }).then((r) => r.json());
+
+      if (rpSig.error) throw new Error(rpSig.error);
+
+      // Step 2: Build IDKit request
+      const request = await IDKit.request({
+        app_id: APP_ID,
+        action: ACTION,
+        rp_context: {
+          rp_id: "rp_698536d3ec4ce424", // from Developer Portal
+          nonce: rpSig.nonce,
+          created_at: rpSig.created_at,
+          expires_at: rpSig.expires_at,
+          signature: rpSig.sig,
+        },
+        allow_legacy_proofs: true,
+        environment: "production", // swap to "production" when live
+      }).preset(deviceLegacy({ signal: SIGNAL }));
+
+      // Step 3: Show connect URL to user (QR / deep link to World App)
+      setConnectUrl(request.connectorURI);
+      setStatus("waiting");
+
+      // Step 4: Poll until user completes on mobile
+      const idkitResponse = await request.pollUntilCompletion();
+      setStatus("verifying");
+
+      // Step 5: Verify proof on backend
+      const verifyRes = await fetch("/api/verify-proof", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idkitResponse, action:ACTION }),
+      }).then((r) => r.json());
+
+      if (!verifyRes.success) {
+        throw new Error(verifyRes?.verifyRes?.detail || "Proof verification failed");
+      }
+
+      setResult(verifyRes);
+      setStatus("success");
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setStatus("error");
+    }
+  };
+
+  const reset = () => {
+    setStatus("idle");
+    setConnectUrl(null);
+    setResult(null);
+    setError(null);
+  };
+
+  return { status, connectUrl, result, error, startVerification, reset };
+}
