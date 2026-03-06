@@ -105,11 +105,40 @@ export default function AddRepo() {
   const [repoUrl, setRepoUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RepoSnapshot | null>(null);
 
   const canFetch = useMemo(() => repoUrl.trim().length > 0, [repoUrl]);
+
+  const redirectToInstall = useCallback((baseInstallUrl: string, repo: string) => {
+    const trimmedRepo = repo.trim();
+    if (!trimmedRepo) {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(INSTALL_PENDING_REPO_KEY, trimmedRepo);
+    } catch {
+      // Ignore storage errors in private browsing modes.
+    }
+
+    let nextInstallUrl = baseInstallUrl;
+    try {
+      const installTarget = new URL(baseInstallUrl);
+      const state = btoa(
+        JSON.stringify({
+          repoUrl: trimmedRepo,
+          ts: Date.now(),
+        })
+      );
+      installTarget.searchParams.set("state", state);
+      nextInstallUrl = installTarget.toString();
+    } catch {
+      // Fallback to original URL if URL parsing fails.
+    }
+
+    window.location.href = nextInstallUrl;
+  }, []);
 
   const fetchRepoSnapshot = useCallback(async (rawRepo: string) => {
     const trimmedRepo = rawRepo.trim();
@@ -120,7 +149,6 @@ export default function AddRepo() {
 
     setLoading(true);
     setError(null);
-    setInstallUrl(null);
     setStatusMessage(null);
 
     try {
@@ -136,7 +164,13 @@ export default function AddRepo() {
           (payload?.appSlug
             ? `https://github.com/apps/${payload.appSlug}/installations/new`
             : null);
-        setInstallUrl(fallbackInstallUrl);
+
+        if (payload?.notInstalled && fallbackInstallUrl) {
+          setStatusMessage("GitHub App not installed. Redirecting to install page...");
+          redirectToInstall(fallbackInstallUrl, trimmedRepo);
+          return false;
+        }
+
         setError(payload?.error || "GitHub fetch failed.");
         return false;
       }
@@ -154,7 +188,7 @@ export default function AddRepo() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [redirectToInstall]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -164,41 +198,6 @@ export default function AddRepo() {
     }
 
     await fetchRepoSnapshot(repoUrl);
-  };
-
-  const handleInstallClick = () => {
-    if (!installUrl) {
-      return;
-    }
-
-    const trimmedRepo = repoUrl.trim();
-    if (!trimmedRepo) {
-      setError("Enter a repo URL before starting install.");
-      return;
-    }
-
-    try {
-      window.sessionStorage.setItem(INSTALL_PENDING_REPO_KEY, trimmedRepo);
-    } catch {
-      // Ignore storage errors in private browsing modes.
-    }
-
-    let nextInstallUrl = installUrl;
-    try {
-      const installTarget = new URL(installUrl);
-      const state = btoa(
-        JSON.stringify({
-          repoUrl: trimmedRepo,
-          ts: Date.now(),
-        })
-      );
-      installTarget.searchParams.set("state", state);
-      nextInstallUrl = installTarget.toString();
-    } catch {
-      // Fallback to original URL if URL parsing fails.
-    }
-
-    window.location.href = nextInstallUrl;
   };
 
   useEffect(() => {
@@ -312,24 +311,6 @@ export default function AddRepo() {
         {error && (
           <div className="border-2 border-neon-red bg-neon-red/10 px-4 py-3 font-mono text-sm text-neon-red">
             {error}
-          </div>
-        )}
-
-        {installUrl && (
-          <div className="border-2 border-neon-amber bg-neon-amber/10 p-4">
-            <p className="font-mono text-sm text-neon-amber">
-              Install the GitHub App on this repo/account first, then click Fetch again.
-            </p>
-            <a
-              href={installUrl}
-              onClick={(event) => {
-                event.preventDefault();
-                handleInstallClick();
-              }}
-              className="mt-3 inline-flex border-2 border-neon-amber bg-background px-3 py-1 font-mono text-xs font-bold uppercase text-neon-amber hover:bg-neon-amber hover:text-background"
-            >
-              Install GitHub App and Return
-            </a>
           </div>
         )}
 
