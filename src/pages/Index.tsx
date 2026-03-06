@@ -165,7 +165,7 @@ export default function Index() {
               <span className="font-mono text-xs font-bold text-neon-green">MAINNET</span>
             </div>
             <Link
-              to="/dashboard"
+              to="/dashboard?tab=repos"
               className="brutal-btn flex items-center gap-1.5 border-neon-green bg-neon-green px-4 py-1.5 font-mono text-sm text-primary-foreground"
             >
               Launch App <ArrowRight className="h-3.5 w-3.5" />
@@ -211,7 +211,7 @@ export default function Index() {
           {/* CTA Buttons */}
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
-              to="/add-repo"
+              to="/dashboard?tab=repos"
               className="brutal-btn group flex items-center gap-2 border-neon-green bg-neon-green px-8 py-4 font-mono text-sm text-primary-foreground"
             >
               <Shield className="h-4 w-4" />

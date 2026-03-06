@@ -1,17 +1,19 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Shield, GitBranch, Brain, HardDrive, Globe, Activity,
   CheckCircle, Clock, AlertTriangle, ArrowLeft, Plus,
   Users, Database, Zap, ChevronRight, Eye, Lock,
   ExternalLink, RefreshCw, FileText, TrendingUp
 } from "lucide-react";
+import { AddRepoContent } from "./AddRepo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 type BountyStatus = "Open" | "In Review" | "Claimed" | "Resolved";
 type AgentStatus = "idle" | "reviewing" | "complete" | "error";
+type DashboardTab = "repos" | "bounties" | "agents" | "storage" | "identity";
 
 interface Bounty {
   id: string;
@@ -160,12 +162,43 @@ const logPrefix: Record<AgentLog["type"], string> = {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<"bounties" | "agents" | "storage" | "identity">("bounties");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const readTabFromQuery = (): DashboardTab => {
+    const tab = searchParams.get("tab");
+    if (
+      tab === "repos" ||
+      tab === "bounties" ||
+      tab === "agents" ||
+      tab === "storage" ||
+      tab === "identity"
+    ) {
+      return tab;
+    }
+    return "bounties";
+  };
+  const [activeTab, setActiveTab] = useState<DashboardTab>(readTabFromQuery);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [worldIdVerified] = useState(true);
 
   const openBounties = BOUNTIES.filter((b) => b.status === "Open").length;
   const resolvedBounties = BOUNTIES.filter((b) => b.status === "Resolved").length;
+  const setTab = (tab: DashboardTab) => {
+    setActiveTab(tab);
+    const nextParams = new URLSearchParams(searchParams);
+    if (tab === "bounties") {
+      nextParams.delete("tab");
+    } else {
+      nextParams.set("tab", tab);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  useEffect(() => {
+    const nextTab = readTabFromQuery();
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
+    }
+  }, [searchParams, activeTab]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -215,6 +248,7 @@ export default function Dashboard() {
           <div className="flex flex-col gap-1 p-3">
             {(
               [
+                { id: "repos", label: "Add Repo", icon: Database, count: null },
                 { id: "bounties", label: "Bounties", icon: GitBranch, count: openBounties },
                 { id: "agents", label: "NEAR Agents", icon: Brain, count: null },
                 { id: "storage", label: "Filecoin Logs", icon: HardDrive, count: null },
@@ -223,7 +257,7 @@ export default function Dashboard() {
             ).map((item) => (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => setTab(item.id)}
                 className={`flex items-center justify-between px-3 py-2.5 text-left font-mono text-sm font-bold uppercase tracking-wider transition-colors ${
                   activeTab === item.id
                     ? "border-2 border-neon-green bg-neon-green/10 text-neon-green"
@@ -264,10 +298,10 @@ export default function Dashboard() {
         <main className="flex-1 overflow-auto p-4 md:p-6">
           {/* Mobile tab bar */}
           <div className="mb-4 flex gap-2 overflow-x-auto md:hidden">
-            {["bounties", "agents", "storage", "identity"].map((tab) => (
+            {["repos", "bounties", "agents", "storage", "identity"].map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab as typeof activeTab)}
+                onClick={() => setTab(tab as DashboardTab)}
                 className={`shrink-0 border-2 px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors ${
                   activeTab === tab
                     ? "border-neon-green bg-neon-green/10 text-neon-green"
@@ -301,6 +335,21 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          {/* REPOS TAB */}
+          {activeTab === "repos" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-2xl font-extrabold uppercase">Repository Intake</h2>
+                <span className="border-2 border-neon-cyan bg-neon-cyan/10 px-2.5 py-1 font-mono text-xs font-bold text-neon-cyan">
+                  LAUNCH FLOW
+                </span>
+              </div>
+              <div className="brutal-card p-4 md:p-6">
+                <AddRepoContent embedded />
+              </div>
+            </div>
+          )}
 
           {/* BOUNTIES TAB */}
           {activeTab === "bounties" && (

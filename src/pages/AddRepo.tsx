@@ -102,6 +102,10 @@ const decodeStateRepo = (encodedState: string | null) => {
 };
 
 export default function AddRepo() {
+  return <AddRepoContent />;
+}
+
+export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const [repoUrl, setRepoUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,21 +249,23 @@ export default function AddRepo() {
   }, [fetchRepoSnapshot]);
 
   return (
-    <div className="min-h-screen bg-background px-4 py-8 md:px-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex items-center justify-between border-b-2 border-border pb-4">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 font-mono text-xs font-bold uppercase text-muted-foreground transition-colors hover:text-neon-green"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Link>
-          <h1 className="font-display text-2xl font-extrabold uppercase">
-            GitHub Repo Fetch Test
-          </h1>
-          <div className="w-16" />
-        </div>
+    <div className={embedded ? "" : "min-h-screen bg-background px-4 py-8 md:px-8"}>
+      <div className={embedded ? "space-y-6" : "mx-auto max-w-6xl space-y-6"}>
+        {!embedded && (
+          <div className="flex items-center justify-between border-b-2 border-border pb-4">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 font-mono text-xs font-bold uppercase text-muted-foreground transition-colors hover:text-neon-green"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
+            <h1 className="font-display text-2xl font-extrabold uppercase">
+              GitHub Repo Fetch Test
+            </h1>
+            <div className="w-16" />
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
