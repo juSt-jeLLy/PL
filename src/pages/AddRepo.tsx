@@ -254,6 +254,12 @@ const decodeStateRepo = (encodedState: string | null) => {
   }
 };
 
+const parseRepoURL = (url: string) => {
+  const match = url.match(/github\.com\/([^/]+)\/([^/\s?#]+)/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
+};
+
 export default function AddRepo() {
   return <AddRepoContent />;
 }
@@ -281,8 +287,9 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
   const canFetch = useMemo(() => repoUrl.trim().length > 0, [repoUrl]);
 
-  const addAnalysisLog = (msg: string, type = "info") =>
+  const addAnalysisLog = useCallback((msg: string, type = "info") => {
     setAnalysisLogs(prev => [...prev, { msg, type, ts: Date.now() }]);
+  }, []);
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
@@ -334,25 +341,19 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     ? codeSuggestions 
     : codeSuggestions.filter(s => s.category === suggestionFilter);
 
-  const parseRepoURL = (url: string) => {
-    const match = url.match(/github\.com\/([^/]+)\/([^/\s?#]+)/);
-    if (!match) return null;
-    return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
-  };
-
-  const runSecurityAnalysis = async () => {
-    if (!result) return;
-    
-    const parsed = parseRepoURL(result.repo.htmlUrl);
+  const runSecurityAnalysis = useCallback(async (snapshot: RepoSnapshot) => {
+    const parsed = parseRepoURL(snapshot.repo.htmlUrl);
     if (!parsed) {
       setError("Cannot parse repository URL for analysis");
-      return;
+      return false;
     }
 
     setAnalyzing(true);
     setAnalysisLogs([]);
     setSecurityFindings([]);
     setCodeSuggestions([]);
+    setExpandedFinding(null);
+    setExpandedSuggestion(null);
     setAnalysisComplete(false);
     
     const { owner, repo } = parsed;
@@ -361,7 +362,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       addAnalysisLog(`🔍 Starting security analysis for ${owner}/${repo}...`);
       
       // Filter code files from the existing file tree
-      const codeFiles = result.fileTree.filter(f => 
+      const codeFiles = snapshot.fileTree.filter(f => 
         f.type === "blob" && shouldIncludeFile(f.path, f.size)
       );
       
@@ -419,14 +420,16 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       
       addAnalysisLog(`✅ Analysis complete! Found ${allFindings.length} security issues and ${allSuggestions.length} improvement suggestions`, "success");
       setAnalysisComplete(true);
+      return true;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Analysis failed";
       addAnalysisLog(`❌ ${errorMsg}`, "error");
       setError(errorMsg);
+      return false;
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, [addAnalysisLog]);
 
   const redirectToInstall = useCallback((baseInstallUrl: string, repo: string) => {
     const trimmedRepo = repo.trim();
@@ -496,7 +499,14 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
       const successPayload = rawPayload as RepoSnapshot;
       setResult(successPayload);
-      return true;
+      setStatusMessage("Repository fetched. Running analysis...");
+      const analysisComplete = await runSecurityAnalysis(successPayload);
+      setStatusMessage(
+        analysisComplete
+          ? "Fetch + analysis complete."
+          : "Repository fetched, but analysis failed. Check the error and logs."
+      );
+      return analysisComplete;
     } catch (fetchError: unknown) {
       setResult(null);
       setError(
@@ -508,7 +518,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [redirectToInstall]);
+  }, [redirectToInstall, runSecurityAnalysis]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -695,8 +705,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </p>
                 </div>
                 <button
-                  onClick={runSecurityAnalysis}
-                  disabled={analyzing}
+                  onClick={() => {
+                    if (result) {
+                      void runSecurityAnalysis(result);
+                    }
+                  }}
+                  disabled={analyzing || loading}
                   className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-50"
                 >
                   {analyzing ? (
@@ -707,7 +721,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   ) : (
                     <>
                       <Shield className="h-4 w-4" />
-                      Analyze Code
+                      Re-Run Analysis
                     </>
                   )}
                 </button>
