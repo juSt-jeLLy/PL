@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import AddRepo from "./pages/AddRepo";
 import NotFound from "./pages/NotFound";
+import CodeAnalyser from "./pages/CodeAnalyse";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => {
             <Route path="/" element={<Index />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/add-repo" element={<AddRepo />} />
+            <Route path="/code" element={<CodeAnalyser />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
