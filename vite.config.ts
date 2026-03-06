@@ -20,6 +20,11 @@ export default defineConfig(({ mode }) => ({
         target: "http://localhost:3001",
         changeOrigin: true,
       },
+      "/reposcan": {
+        target: "http://127.0.0.1:3005",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/reposcan/, ""),
+      },
     },
   },
   plugins: [

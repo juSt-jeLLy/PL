@@ -96,7 +96,8 @@ type CodeSuggestion = {
 };
 
 // Analysis configuration
-const BACKEND_URL = "http://localhost:3005";
+const BACKEND_URL =
+  import.meta.env.VITE_REPOSCAN_URL?.replace(/\/$/, "") || "/reposcan";
 const ALLOWED_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cpp", ".c", ".cs", ".rb", ".php", ".yaml", ".yml", ".json", ".sh"];
 const IGNORED_PATHS = ["node_modules/", ".git/", "dist/", "build/", "vendor/", "__pycache__/", ".next/", "coverage/"];
 
