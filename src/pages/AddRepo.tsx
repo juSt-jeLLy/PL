@@ -473,27 +473,29 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       const response = await fetch(
         `/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`
       );
-      const payload = (await response.json()) as RepoSnapshot | FetchFailurePayload;
+      const rawPayload: unknown = await response.json();
 
       if (!response.ok) {
+        const failurePayload = (rawPayload ?? {}) as FetchFailurePayload;
         setResult(null);
         const fallbackInstallUrl =
-          payload?.installUrl ||
-          (payload?.appSlug
-            ? `https://github.com/apps/${payload.appSlug}/installations/new`
+          failurePayload.installUrl ||
+          (failurePayload.appSlug
+            ? `https://github.com/apps/${failurePayload.appSlug}/installations/new`
             : null);
 
-        if (payload?.notInstalled && fallbackInstallUrl) {
+        if (failurePayload.notInstalled && fallbackInstallUrl) {
           setStatusMessage("GitHub App not installed. Redirecting to install page...");
           redirectToInstall(fallbackInstallUrl, trimmedRepo);
           return false;
         }
 
-        setError(payload?.error || "GitHub fetch failed.");
+        setError(failurePayload.error || "GitHub fetch failed.");
         return false;
       }
 
-      setResult(payload as RepoSnapshot);
+      const successPayload = rawPayload as RepoSnapshot;
+      setResult(successPayload);
       return true;
     } catch (fetchError: unknown) {
       setResult(null);
