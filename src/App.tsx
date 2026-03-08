@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import AddRepo from "./pages/AddRepo";
 import NotFound from "./pages/NotFound";
 import CodeAnalyser from "./pages/CodeAnalyse";
+import AuditPage from "./pages/AuditPage";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/add-repo" element={<AddRepo />} />
             <Route path="/code" element={<CodeAnalyser />} />
+            <Route path="/audit" element={<AuditPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -382,6 +382,9 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
+            <Link to="/audit" className="brutal-btn hidden sm:flex items-center gap-1.5 border-neon-cyan bg-neon-cyan/10 px-3 py-1 font-mono text-sm font-bold text-neon-cyan hover:bg-neon-cyan/20">
+              AI AUDIT
+            </Link>
             <Link to="/add-repo" className="brutal-btn hidden sm:flex items-center gap-1.5 border-border bg-card px-3 py-1 font-mono text-sm text-foreground hover:border-neon-green">
               <Plus className="h-3.5 w-3.5" /> NEW REPO
             </Link>
@@ -413,6 +416,12 @@ export default function Dashboard() {
                 )}
               </button>
             ))}
+            <div className="my-1 border-t border-border" />
+            <Link to="/audit"
+              className="flex items-center gap-2.5 border-2 border-transparent px-3 py-2.5 font-mono text-sm font-bold uppercase tracking-wider text-neon-cyan transition-colors hover:bg-sidebar-accent hover:border-border">
+              <Shield className="h-4 w-4" />
+              <span>AI Audit</span>
+            </Link>
           </div>
           <div className="mt-auto border-t-2 border-border p-3 space-y-2.5">
             {[{ label: "World Chain", dot: "status-dot-green" }, { label: "NEAR AI", dot: "status-dot-cyan" }, { label: "Filecoin", dot: "status-dot-green" }].map((s) => (
@@ -434,6 +443,10 @@ export default function Dashboard() {
                 {item.label}
               </button>
             ))}
+            <Link to="/audit"
+              className="shrink-0 border-2 border-neon-cyan bg-neon-cyan/10 px-3 py-1.5 font-mono text-sm font-bold uppercase text-neon-cyan">
+              AI Audit
+            </Link>
           </div>
 
           {/* Stats Row */}
