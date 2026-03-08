@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,7 +7,6 @@
 
 @layer base {
   :root {
-    /* Core dark palette */
     --background: 240 8% 8%;
     --foreground: 60 10% 92%;
 
@@ -17,18 +16,15 @@
     --popover: 240 6% 12%;
     --popover-foreground: 60 10% 90%;
 
-    /* Electric green — primary */
     --primary: 145 80% 42%;
     --primary-foreground: 240 8% 8%;
 
-    /* Surfaces */
     --secondary: 240 6% 16%;
     --secondary-foreground: 60 6% 70%;
 
     --muted: 240 6% 14%;
     --muted-foreground: 240 5% 45%;
 
-    /* Cyan accent */
     --accent: 191 90% 50%;
     --accent-foreground: 240 8% 8%;
 
@@ -41,7 +37,6 @@
 
     --radius: 0px;
 
-    /* Sidebar */
     --sidebar-background: 240 8% 6%;
     --sidebar-foreground: 60 6% 80%;
     --sidebar-primary: 145 80% 42%;
@@ -51,7 +46,6 @@
     --sidebar-border: 60 10% 82%;
     --sidebar-ring: 145 80% 42%;
 
-    /* Brutalist color tokens */
     --neon-green: 145 80% 42%;
     --neon-cyan: 191 90% 50%;
     --neon-amber: 43 95% 56%;
@@ -60,16 +54,69 @@
     --surface-2: 240 6% 16%;
     --surface-3: 240 6% 20%;
 
-    /* Brutalist hard shadow */
-    --shadow-brutal: 4px 4px 0px hsl(60 10% 82%);
-    --shadow-brutal-sm: 2px 2px 0px hsl(60 10% 82%);
-    --shadow-brutal-green: 4px 4px 0px hsl(145 80% 42%);
-    --shadow-brutal-cyan: 4px 4px 0px hsl(191 90% 50%);
-    --shadow-brutal-amber: 4px 4px 0px hsl(43 95% 56%);
+    --shadow-color: 60 10% 82%;
+    --shadow-brutal: 4px 4px 0px hsl(var(--shadow-color));
+    --shadow-brutal-sm: 2px 2px 0px hsl(var(--shadow-color));
+    --shadow-brutal-green: 4px 4px 0px hsl(var(--neon-green));
+    --shadow-brutal-cyan: 4px 4px 0px hsl(var(--neon-cyan));
+    --shadow-brutal-amber: 4px 4px 0px hsl(var(--neon-amber));
 
-    /* Fonts */
     --font-mono: 'Space Mono', 'JetBrains Mono', monospace;
-    --font-display: 'Syne', system-ui, sans-serif;
+    --font-display: 'Outfit', system-ui, sans-serif;
+  }
+
+  .light {
+    --background: 0 0% 97%;
+    --foreground: 0 0% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 8%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 8%;
+
+    --primary: 142 65% 32%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 91%;
+    --secondary-foreground: 0 0% 22%;
+
+    --muted: 0 0% 93%;
+    --muted-foreground: 0 0% 38%;
+
+    --accent: 142 65% 32%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 76%;
+    --input: 0 0% 90%;
+    --ring: 142 65% 32%;
+
+    --sidebar-background: 0 0% 93%;
+    --sidebar-foreground: 0 0% 18%;
+    --sidebar-primary: 142 65% 32%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 88%;
+    --sidebar-accent-foreground: 0 0% 18%;
+    --sidebar-border: 0 0% 76%;
+    --sidebar-ring: 142 65% 32%;
+
+    --neon-green: 142 65% 32%;
+    --neon-cyan: 0 0% 38%;
+    --neon-amber: 43 85% 38%;
+    --neon-red: 0 72% 44%;
+    --surface-1: 0 0% 100%;
+    --surface-2: 0 0% 93%;
+    --surface-3: 0 0% 87%;
+
+    --shadow-color: 240 10% 20%;
+    --shadow-brutal: 4px 4px 0px hsl(var(--shadow-color));
+    --shadow-brutal-sm: 2px 2px 0px hsl(var(--shadow-color));
+    --shadow-brutal-green: 4px 4px 0px hsl(var(--neon-green));
+    --shadow-brutal-cyan: 4px 4px 0px hsl(var(--neon-cyan));
+    --shadow-brutal-amber: 4px 4px 0px hsl(var(--neon-amber));
   }
 }
 
@@ -95,24 +142,20 @@
 }
 
 @layer utilities {
-  /* Neon text */
   .text-neon-green { color: hsl(var(--neon-green)); }
   .text-neon-cyan { color: hsl(var(--neon-cyan)); }
   .text-neon-amber { color: hsl(var(--neon-amber)); }
   .text-neon-red { color: hsl(var(--neon-red)); }
 
-  /* Brutalist backgrounds */
   .bg-neon-green { background-color: hsl(var(--neon-green)); }
   .bg-neon-cyan { background-color: hsl(var(--neon-cyan)); }
   .bg-neon-amber { background-color: hsl(var(--neon-amber)); }
   .bg-neon-red { background-color: hsl(var(--neon-red)); }
 
-  /* Surface backgrounds */
   .bg-surface-1 { background-color: hsl(var(--surface-1)); }
   .bg-surface-2 { background-color: hsl(var(--surface-2)); }
   .bg-surface-3 { background-color: hsl(var(--surface-3)); }
 
-  /* Hard shadows — neo-brutalism core */
   .shadow-brutal { box-shadow: var(--shadow-brutal); }
   .shadow-brutal-sm { box-shadow: var(--shadow-brutal-sm); }
   .shadow-brutal-green { box-shadow: var(--shadow-brutal-green); }
@@ -120,35 +163,26 @@
   .shadow-brutal-amber { box-shadow: var(--shadow-brutal-amber); }
 
   .shadow-brutal-hover:hover {
-    box-shadow: 6px 6px 0px hsl(60 10% 82%);
+    box-shadow: 6px 6px 0px hsl(var(--shadow-color));
     transform: translate(-2px, -2px);
   }
 
-  /* Status indicators */
   .status-dot {
     @apply h-2.5 w-2.5 rounded-full;
   }
-  .status-dot-green {
-    background-color: hsl(var(--neon-green));
-  }
-  .status-dot-cyan {
-    background-color: hsl(var(--neon-cyan));
-  }
-  .status-dot-amber {
-    background-color: hsl(var(--neon-amber));
-  }
+  .status-dot-green { background-color: hsl(var(--neon-green)); }
+  .status-dot-cyan { background-color: hsl(var(--neon-cyan)); }
+  .status-dot-amber { background-color: hsl(var(--neon-amber)); }
 
-  /* Mono font helper */
   .font-mono-custom { font-family: var(--font-mono); }
 
-  /* Brutalist card */
   .brutal-card {
     @apply border-2 border-border bg-card;
     box-shadow: var(--shadow-brutal);
     transition: transform 0.15s, box-shadow 0.15s;
   }
   .brutal-card:hover {
-    box-shadow: 6px 6px 0px hsl(60 10% 82%);
+    box-shadow: 6px 6px 0px hsl(var(--shadow-color));
     transform: translate(-2px, -2px);
   }
 
@@ -170,22 +204,20 @@
     box-shadow: var(--shadow-brutal-amber);
   }
 
-  /* Brutalist button base */
   .brutal-btn {
     @apply border-2 border-border font-bold uppercase tracking-wider;
     box-shadow: var(--shadow-brutal-sm);
     transition: transform 0.1s, box-shadow 0.1s;
   }
   .brutal-btn:hover {
-    box-shadow: 4px 4px 0px hsl(60 10% 82%);
+    box-shadow: 4px 4px 0px hsl(var(--shadow-color));
     transform: translate(-1px, -1px);
   }
   .brutal-btn:active {
-    box-shadow: 0px 0px 0px hsl(60 10% 82%);
+    box-shadow: 0px 0px 0px hsl(var(--shadow-color));
     transform: translate(2px, 2px);
   }
 
-  /* Terminal blinking cursor */
   .animate-terminal-blink {
     animation: blink 1s step-end infinite;
   }
@@ -203,4 +235,32 @@
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
+}
+
+/* ── Background patterns ───────────────────────────────────────────────────── */
+
+/* Dot grid — dark mode */
+.bg-dot-grid {
+  background-image: radial-gradient(circle, hsl(60 10% 82% / 0.18) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Dot grid — light mode */
+.light .bg-dot-grid {
+  background-image: radial-gradient(circle, hsl(240 10% 20% / 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Hero radial glow — dark */
+.bg-hero-glow {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, hsl(145 80% 42% / 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 60%, hsl(191 90% 50% / 0.07) 0%, transparent 60%);
+}
+
+/* Hero radial glow — light */
+.light .bg-hero-glow {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, hsl(145 70% 32% / 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 60%, hsl(191 80% 34% / 0.05) 0%, transparent 60%);
 }

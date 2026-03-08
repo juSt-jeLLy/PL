@@ -520,7 +520,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
         {!embedded && (
           <div className="flex items-center justify-between border-b-2 border-border pb-4">
-            <Link to="/" className="inline-flex items-center gap-2 font-mono text-xs font-bold uppercase text-muted-foreground transition-colors hover:text-neon-green">
+            <Link to="/" className="inline-flex items-center gap-2 font-mono text-sm font-bold uppercase text-muted-foreground transition-colors hover:text-neon-green">
               <ArrowLeft className="h-4 w-4" />Back
             </Link>
             <h1 className="font-display text-2xl font-extrabold uppercase">GitHub Repo Fetch</h1>
@@ -530,15 +530,15 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
         {/* ── Fetch Form ──────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="space-y-4 border-2 border-border bg-card p-4 md:p-6">
-          <label htmlFor="repo-url" className="block font-mono text-xs font-bold uppercase text-muted-foreground">GitHub URL or owner/repo</label>
+          <label htmlFor="repo-url" className="block font-mono text-sm font-bold uppercase text-muted-foreground">GitHub URL or owner/repo</label>
           <input id="repo-url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://github.com/octocat/Hello-World" className="w-full border-2 border-border bg-background px-3 py-2 font-mono text-sm focus:border-neon-green focus:outline-none" />
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-70">
+            <button type="submit" disabled={loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-70">
               {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Fetching</> : "Fetch Repo Data"}
             </button>
-            <p className="font-mono text-xs text-muted-foreground">Requires GitHub App to be installed on the target repository.</p>
+            <p className="font-mono text-sm text-muted-foreground">Requires GitHub App to be installed on the target repository.</p>
           </div>
-          <p className="font-mono text-xs text-muted-foreground">Set GitHub App Setup URL to: {window.location.origin}/add-repo</p>
+          <p className="font-mono text-sm text-muted-foreground">Set GitHub App Setup URL to: {window.location.origin}/add-repo</p>
         </form>
 
         {statusMessage && <div className="border-2 border-neon-cyan bg-neon-cyan/10 px-4 py-3 font-mono text-sm text-neon-cyan">{statusMessage}</div>}
@@ -555,18 +555,18 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   <div className="h-8 w-8 rounded bg-neon-green/20 flex items-center justify-center"><Shield className="h-4 w-4 text-neon-green" /></div>
                   <div>
                     <h2 className="font-display text-lg font-extrabold uppercase text-neon-green">{result.repo.fullName}</h2>
-                    <p className="font-mono text-xs text-muted-foreground">{result.repo.description || "No description"}</p>
+                    <p className="font-mono text-sm text-muted-foreground">{result.repo.description || "No description"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex gap-3 font-mono text-xs text-muted-foreground">
+                  <div className="flex gap-3 font-mono text-sm text-muted-foreground">
                     <span>⭐ {result.repo.stars}</span><span>🍴 {result.repo.forks}</span>
                     <span>🔤 {result.repo.language || "n/a"}</span><span>🌿 {result.repo.defaultBranch}</span>
                   </div>
-                  <a href={result.repo.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 border-2 border-border bg-background px-3 py-1 font-mono text-xs font-bold uppercase hover:border-neon-cyan hover:text-neon-cyan">
+                  <a href={result.repo.htmlUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 border-2 border-border bg-background px-3 py-1 font-mono text-sm font-bold uppercase hover:border-neon-cyan hover:text-neon-cyan">
                     GitHub <ExternalLink className="h-3 w-3" />
                   </a>
-                  <button onClick={() => void runSecurityAnalysis(result)} disabled={analyzing || loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-50">
+                  <button onClick={() => void runSecurityAnalysis(result)} disabled={analyzing || loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-50">
                     {analyzing ? <><Loader2 className="h-4 w-4 animate-spin" />Analyzing…</> : <><Shield className="h-4 w-4" />Run Analysis</>}
                   </button>
                 </div>
@@ -581,7 +581,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
               </div>
               {!isConnected ? (
                 <div className="flex flex-wrap items-center gap-3">
-                  <p className="font-mono text-xs text-muted-foreground">Connect wallet to register this repo on World Chain and create bounties.</p>
+                  <p className="font-mono text-sm text-muted-foreground">Connect wallet to register this repo on World Chain and create bounties.</p>
                   <WalletButton />
                 </div>
               ) : (existingRepoId || registeredRepoId) ? (
@@ -593,12 +593,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-3">
-                  <p className="font-mono text-xs text-muted-foreground">Stake ETH to register on World Chain Sepolia and unlock bounty creation.</p>
+                  <p className="font-mono text-sm text-muted-foreground">Stake ETH to register on World Chain Sepolia and unlock bounty creation.</p>
                   <div className="flex items-center gap-2">
-                    <label className="font-mono text-xs font-bold uppercase text-muted-foreground">Stake (ETH)</label>
+                    <label className="font-mono text-sm font-bold uppercase text-muted-foreground">Stake (ETH)</label>
                     <input type="number" step="0.0001" min="0.000001" value={stakeEth} onChange={e => setStakeEth(e.target.value)} className="w-28 border-2 border-border bg-background px-2 py-1 font-mono text-sm focus:border-neon-cyan focus:outline-none" />
                   </div>
-                  <button onClick={handleRegisterRepo} disabled={isRegistering} className="brutal-btn inline-flex items-center gap-2 border-neon-cyan bg-neon-cyan px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-60">
+                  <button onClick={handleRegisterRepo} disabled={isRegistering} className="brutal-btn inline-flex items-center gap-2 border-neon-cyan bg-neon-cyan px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-60">
                     {isRegistering ? <><Loader2 className="h-4 w-4 animate-spin" />Registering…</> : <><Wallet className="h-4 w-4" />Register on World Chain</>}
                   </button>
                 </div>
@@ -615,11 +615,11 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   <div className="flex items-center gap-2">
                     {selectedIssues.size > 0 && !issueBountiesCreated && (
-                      <button onClick={handleCreateIssueBounties} disabled={isCreatingIssueBounties} className="brutal-btn inline-flex items-center gap-2 border-neon-amber bg-neon-amber px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-60">
+                      <button onClick={handleCreateIssueBounties} disabled={isCreatingIssueBounties} className="brutal-btn inline-flex items-center gap-2 border-neon-amber bg-neon-amber px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-60">
                         {isCreatingIssueBounties ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : `Create ${selectedIssues.size} Bounty(ies)`}
                       </button>
                     )}
-                    {issueBountiesCreated && <span className="font-mono text-xs font-bold text-neon-green flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Created!</span>}
+                    {issueBountiesCreated && <span className="font-mono text-sm font-bold text-neon-green flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Created!</span>}
                   </div>
                 </div>
                 <div className="max-h-64 space-y-2 overflow-auto">
@@ -628,15 +628,15 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                       <div className="flex items-start gap-2">
                         <input type="checkbox" checked={selectedIssues.has(idx)} onChange={() => toggle(selectedIssues, setSelectedIssues, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-amber-500 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="font-mono text-xs font-bold truncate">#{issue.number} {issue.title}</div>
-                          <div className="font-mono text-xs text-muted-foreground">by {issue.user} · {formatDate(issue.createdAt)}</div>
+                          <div className="font-mono text-sm font-bold truncate">#{issue.number} {issue.title}</div>
+                          <div className="font-mono text-sm text-muted-foreground">by {issue.user} · {formatDate(issue.createdAt)}</div>
                         </div>
                         {selectedIssues.has(idx) && (
                           <div className="flex items-center gap-2 shrink-0">
-                            <select value={issueSeverities[idx] ?? 1} onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))} className="border border-border bg-background px-1 py-0.5 font-mono text-xs">
+                            <select value={issueSeverities[idx] ?? 1} onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))} className="border border-border bg-background px-1 py-0.5 font-mono text-sm">
                               <option value={0}>LOW</option><option value={1}>MEDIUM</option><option value={2}>HIGH</option><option value={3}>CRITICAL</option>
                             </select>
-                            <input type="number" step="0.001" min="0.001" placeholder="ETH" value={issueBountyAmounts[idx] || "0.001"} onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))} className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-xs" />
+                            <input type="number" step="0.001" min="0.001" placeholder="ETH" value={issueBountyAmounts[idx] || "0.001"} onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))} className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-sm" />
                           </div>
                         )}
                       </div>
@@ -657,7 +657,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                       { label: "Improvements", value: analysisStats.suggestionsGenerated, color: "text-neon-amber", border: "border-neon-amber/40" },
                       { label: "Chunks Scanned", value: analysisStats.chunksAnalyzed, color: "text-foreground", border: "border-border" },
                     ].map(s => (
-                      <div key={s.label} className={`border-2 ${s.border} bg-background p-3 font-mono text-xs`}>
+                      <div key={s.label} className={`border-2 ${s.border} bg-background p-3 font-mono text-sm`}>
                         <div className="text-muted-foreground">{s.label}</div>
                         <div className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</div>
                       </div>
@@ -666,14 +666,14 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                 )}
                 {analysisLogs.length > 0 && (
                   <div className="bg-background border-2 border-border p-3">
-                    <div className="text-muted-foreground font-mono text-xs font-bold uppercase mb-2">Analysis Log</div>
+                    <div className="text-muted-foreground font-mono text-sm font-bold uppercase mb-2">Analysis Log</div>
                     <div className="max-h-28 space-y-0.5 overflow-auto">
                       {analysisLogs.map((log, i) => (
-                        <div key={i} className={`font-mono text-xs ${log.type === "error" ? "text-neon-red" : log.type === "warn" ? "text-neon-amber" : log.type === "success" ? "text-neon-green" : "text-muted-foreground"}`}>
+                        <div key={i} className={`font-mono text-sm ${log.type === "error" ? "text-neon-red" : log.type === "warn" ? "text-neon-amber" : log.type === "success" ? "text-neon-green" : "text-muted-foreground"}`}>
                           <span className="opacity-40 mr-2">{new Date(log.ts).toLocaleTimeString()}</span>{log.msg}
                         </div>
                       ))}
-                      {analyzing && <div className="font-mono text-xs text-neon-green animate-pulse">⏳ Working…</div>}
+                      {analyzing && <div className="font-mono text-sm text-neon-green animate-pulse">⏳ Working…</div>}
                     </div>
                   </div>
                 )}
@@ -689,12 +689,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                     <h3 className="font-display text-base font-extrabold uppercase flex items-center gap-2"><Lock className="h-4 w-4 text-neon-red" />Security ({filteredFindings.length})</h3>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <select value={findingFilter} onChange={e => setFindingFilter(e.target.value)} className="border-2 border-border bg-background px-2 py-1 font-mono text-xs">
+                      <select value={findingFilter} onChange={e => setFindingFilter(e.target.value)} className="border-2 border-border bg-background px-2 py-1 font-mono text-sm">
                         <option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option>
                         <option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="INFO">Info</option>
                       </select>
                       {selectedFindings.size > 0 && (
-                        <button onClick={createGitHubIssues} disabled={isCreatingIssues} className="font-mono text-xs font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
+                        <button onClick={createGitHubIssues} disabled={isCreatingIssues} className="font-mono text-sm font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
                           {isCreatingIssues ? "Creating…" : `🐛 Open ${selectedFindings.size} on GitHub`}
                         </button>
                       )}
@@ -719,18 +719,18 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-2 min-w-0">
                                     {getSeverityIcon(f.severity)}
-                                    <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-current/20 shrink-0">{f.severity}</span>
-                                    <span className="font-mono text-xs font-bold truncate">{f.type}</span>
+                                    <span className="font-mono text-sm font-bold px-1.5 py-0.5 bg-current/20 shrink-0">{f.severity}</span>
+                                    <span className="font-mono text-sm font-bold truncate">{f.type}</span>
                                   </div>
                                   {isExp ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
                                 </div>
-                                <div className="font-mono text-xs opacity-60 mt-0.5 truncate">{f.file}{f.line ? `:${f.line}` : ""}</div>
+                                <div className="font-mono text-sm opacity-60 mt-0.5 truncate">{f.file}{f.line ? `:${f.line}` : ""}</div>
                                 {isExp && (
                                   <div className="mt-3 space-y-2 border-t border-current/20 pt-3">
-                                    <p className="font-mono text-xs leading-relaxed">{f.description}</p>
+                                    <p className="font-mono text-sm leading-relaxed">{f.description}</p>
                                     <div className="bg-background/50 border border-current/30 p-2">
-                                      <div className="font-mono text-xs font-bold opacity-60 mb-1 flex items-center gap-1"><Zap className="h-3 w-3" />FIX</div>
-                                      <p className="font-mono text-xs">{f.suggestion}</p>
+                                      <div className="font-mono text-sm font-bold opacity-60 mb-1 flex items-center gap-1"><Zap className="h-3 w-3" />FIX</div>
+                                      <p className="font-mono text-sm">{f.suggestion}</p>
                                     </div>
                                   </div>
                                 )}
@@ -743,7 +743,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   {createdIssues.length > 0 && (
                     <div className="mt-3 border-2 border-blue-500/40 bg-blue-500/5">
-                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-xs font-bold text-blue-300">✅ {createdIssues.filter(x => !x.error).length}/{createdIssues.length} Issues Created</div>
+                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-sm font-bold text-blue-300">✅ {createdIssues.filter(x => !x.error).length}/{createdIssues.length} Issues Created</div>
                       <div className="p-2 flex flex-col gap-1.5">
                         {createdIssues.map((issue, i) => (
                           <div key={i} className={`flex items-center gap-2 px-2 py-1.5 text-xs font-mono ${issue.error ? "bg-red-500/10 text-red-400" : "bg-background text-muted-foreground"}`}>
@@ -760,12 +760,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                     <h3 className="font-display text-base font-extrabold uppercase flex items-center gap-2"><Zap className="h-4 w-4 text-neon-amber" />Improvements ({filteredSuggestions.length})</h3>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <select value={suggestionFilter} onChange={e => setSuggestionFilter(e.target.value)} className="border-2 border-border bg-background px-2 py-1 font-mono text-xs">
+                      <select value={suggestionFilter} onChange={e => setSuggestionFilter(e.target.value)} className="border-2 border-border bg-background px-2 py-1 font-mono text-sm">
                         <option value="ALL">All</option><option value="Architecture">Architecture</option><option value="Readability">Readability</option>
                         <option value="Testing">Testing</option><option value="Edge Case">Edge Cases</option><option value="Better Approach">Better Approach</option>
                       </select>
                       {selectedSuggestions.size > 0 && (
-                        <button onClick={createSuggestionIssues} disabled={isCreatingSuggestionIssues} className="font-mono text-xs font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
+                        <button onClick={createSuggestionIssues} disabled={isCreatingSuggestionIssues} className="font-mono text-sm font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
                           {isCreatingSuggestionIssues ? "Creating…" : `🐛 Open ${selectedSuggestions.size} on GitHub`}
                         </button>
                       )}
@@ -790,20 +790,20 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                     {getCategoryIcon(s.category)}
-                                    <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-current/20 shrink-0">{s.priority}</span>
-                                    <span className="font-mono text-xs bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 shrink-0">{s.category}</span>
-                                    <span className="font-mono text-xs font-bold truncate">{s.title}</span>
+                                    <span className="font-mono text-sm font-bold px-1.5 py-0.5 bg-current/20 shrink-0">{s.priority}</span>
+                                    <span className="font-mono text-sm bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 shrink-0">{s.category}</span>
+                                    <span className="font-mono text-sm font-bold truncate">{s.title}</span>
                                   </div>
                                   {isExp ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
                                 </div>
-                                <div className="font-mono text-xs opacity-60 mt-0.5 truncate">{s.file}{s.line ? `:${s.line}` : ""}</div>
+                                <div className="font-mono text-sm opacity-60 mt-0.5 truncate">{s.file}{s.line ? `:${s.line}` : ""}</div>
                                 {isExp && (
                                   <div className="mt-3 space-y-2 border-t border-current/20 pt-3">
-                                    <p className="font-mono text-xs leading-relaxed">{s.description}</p>
+                                    <p className="font-mono text-sm leading-relaxed">{s.description}</p>
                                     {s.example && (
                                       <div className="bg-background border border-current/30 overflow-hidden">
-                                        <div className="bg-current/10 px-2 py-1 border-b border-current/20 font-mono text-xs opacity-60">Example</div>
-                                        <pre className="p-2 font-mono text-xs overflow-auto"><code>{s.example}</code></pre>
+                                        <div className="bg-current/10 px-2 py-1 border-b border-current/20 font-mono text-sm opacity-60">Example</div>
+                                        <pre className="p-2 font-mono text-sm overflow-auto"><code>{s.example}</code></pre>
                                       </div>
                                     )}
                                   </div>
@@ -817,7 +817,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   {createdSuggestionIssues.length > 0 && (
                     <div className="mt-3 border-2 border-blue-500/40 bg-blue-500/5">
-                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-xs font-bold text-blue-300">✅ {createdSuggestionIssues.filter(x => !x.error).length}/{createdSuggestionIssues.length} Issues Created</div>
+                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-sm font-bold text-blue-300">✅ {createdSuggestionIssues.filter(x => !x.error).length}/{createdSuggestionIssues.length} Issues Created</div>
                       <div className="p-2 flex flex-col gap-1.5">
                         {createdSuggestionIssues.map((issue, i) => (
                           <div key={i} className={`flex items-center gap-2 px-2 py-1.5 text-xs font-mono ${issue.error ? "bg-red-500/10 text-red-400" : "bg-background text-muted-foreground"}`}>
@@ -840,23 +840,23 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                     <h3 className="font-display text-base font-extrabold uppercase text-neon-green">Create Bounties from AI Issues ({allCreatedIssues.length})</h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="font-mono text-xs font-bold uppercase text-muted-foreground">Reward (ETH each)</label>
-                    <input type="number" step="0.001" min="0.001" value={aiIssueBountyAmount} onChange={e => setAiIssueBountyAmount(e.target.value)} className="w-20 border-2 border-border bg-background px-2 py-1 font-mono text-xs" />
+                    <label className="font-mono text-sm font-bold uppercase text-muted-foreground">Reward (ETH each)</label>
+                    <input type="number" step="0.001" min="0.001" value={aiIssueBountyAmount} onChange={e => setAiIssueBountyAmount(e.target.value)} className="w-20 border-2 border-border bg-background px-2 py-1 font-mono text-sm" />
                   </div>
                 </div>
                 {selectedAIIssueBounties.size > 0 && !aiIssueBountiesCreated && (
-                  <button onClick={handleCreateAIBounties} disabled={isCreatingAIBounties} className="brutal-btn mb-3 inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-60">
+                  <button onClick={handleCreateAIBounties} disabled={isCreatingAIBounties} className="brutal-btn mb-3 inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-60">
                     {isCreatingAIBounties ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : `Create ${selectedAIIssueBounties.size} Bounty(ies)`}
                   </button>
                 )}
-                {aiIssueBountiesCreated && <span className="font-mono text-xs font-bold text-neon-green flex items-center gap-1 mb-3"><CheckCircle className="h-3.5 w-3.5" /> Created!</span>}
+                {aiIssueBountiesCreated && <span className="font-mono text-sm font-bold text-neon-green flex items-center gap-1 mb-3"><CheckCircle className="h-3.5 w-3.5" /> Created!</span>}
                 <div className="max-h-48 space-y-2 overflow-auto">
                   {allCreatedIssues.map((issue, idx) => (
                     <div key={idx} className={`border-2 p-3 ${selectedAIIssueBounties.has(idx) ? "border-neon-green bg-neon-green/10" : "border-border bg-background"}`}>
                       <div className="flex items-center gap-2">
                         <input type="checkbox" checked={selectedAIIssueBounties.has(idx)} onChange={() => toggle(selectedAIIssueBounties, setSelectedAIIssueBounties, idx)} className="h-4 w-4 cursor-pointer accent-green-500 shrink-0" />
-                        <span className="font-mono text-xs opacity-60 shrink-0">#{issue.number}</span>
-                        <a href={issue.url} target="_blank" rel="noopener noreferrer" className="font-mono text-xs font-bold text-neon-cyan hover:underline truncate">{issue.title}</a>
+                        <span className="font-mono text-sm opacity-60 shrink-0">#{issue.number}</span>
+                        <a href={issue.url} target="_blank" rel="noopener noreferrer" className="font-mono text-sm font-bold text-neon-cyan hover:underline truncate">{issue.title}</a>
                       </div>
                     </div>
                   ))}
@@ -866,18 +866,18 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
             {/* ── REPO DETAILS ─────────────────────────────────────────────── */}
             <details className="group border-2 border-border bg-card" open>
-              <summary className="cursor-pointer px-4 py-3 font-mono text-xs font-bold uppercase text-muted-foreground flex items-center gap-2 select-none hover:text-neon-cyan">
+              <summary className="cursor-pointer px-4 py-3 font-mono text-sm font-bold uppercase text-muted-foreground flex items-center gap-2 select-none hover:text-neon-cyan">
                 <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
                 Repo Details — Issues · PRs · Files
               </summary>
               <div className="px-4 pb-4 space-y-4">
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div>
-                    <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">GitHub Issues ({result.summary.issueCount})</h4>
+                    <h4 className="font-mono text-sm font-bold uppercase text-muted-foreground mb-2">GitHub Issues ({result.summary.issueCount})</h4>
                     <div className="max-h-48 space-y-2 overflow-auto">
-                      {result.issues.length === 0 && <p className="font-mono text-xs text-muted-foreground">No issues.</p>}
+                      {result.issues.length === 0 && <p className="font-mono text-sm text-muted-foreground">No issues.</p>}
                       {result.issues.map(issue => (
-                        <a key={issue.id} href={issue.url} target="_blank" rel="noreferrer" className="block border-2 border-border bg-background p-2 hover:border-neon-cyan font-mono text-xs">
+                        <a key={issue.id} href={issue.url} target="_blank" rel="noreferrer" className="block border-2 border-border bg-background p-2 hover:border-neon-cyan font-mono text-sm">
                           <span className="text-muted-foreground">#{issue.number}</span>
                           <span className={`ml-2 px-1 text-xs ${issue.state === "open" ? "bg-neon-green/20 text-neon-green" : "bg-gray-500/20 text-gray-400"}`}>{issue.state}</span>
                           <div className="mt-0.5 font-bold truncate">{issue.title}</div>
@@ -886,11 +886,11 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   </div>
                   <div>
-                    <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">Pull Requests ({result.summary.pullRequestCount})</h4>
+                    <h4 className="font-mono text-sm font-bold uppercase text-muted-foreground mb-2">Pull Requests ({result.summary.pullRequestCount})</h4>
                     <div className="max-h-48 space-y-2 overflow-auto">
-                      {result.pullRequests.length === 0 && <p className="font-mono text-xs text-muted-foreground">No PRs.</p>}
+                      {result.pullRequests.length === 0 && <p className="font-mono text-sm text-muted-foreground">No PRs.</p>}
                       {result.pullRequests.map(pr => (
-                        <a key={pr.id} href={pr.url} target="_blank" rel="noreferrer" className="block border-2 border-border bg-background p-2 hover:border-neon-green font-mono text-xs">
+                        <a key={pr.id} href={pr.url} target="_blank" rel="noreferrer" className="block border-2 border-border bg-background p-2 hover:border-neon-green font-mono text-sm">
                           <span className="text-muted-foreground">#{pr.number}</span>
                           <span className={`ml-2 px-1 text-xs ${pr.state === "open" ? "bg-neon-green/20 text-neon-green" : "bg-purple-500/20 text-purple-400"}`}>{pr.state}{pr.draft ? " draft" : ""}</span>
                           <div className="mt-0.5 font-bold truncate">{pr.title}</div>
@@ -900,10 +900,10 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                 </div>
                 <div>
-                  <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">Root Files ({result.summary.rootFileCount})</h4>
+                  <h4 className="font-mono text-sm font-bold uppercase text-muted-foreground mb-2">Root Files ({result.summary.rootFileCount})</h4>
                   <div className="grid gap-1.5 md:grid-cols-3 max-h-32 overflow-auto">
                     {result.rootFiles.map(file => (
-                      <a key={file.path} href={file.url} target="_blank" rel="noreferrer" className="border border-border bg-background p-2 font-mono text-xs hover:border-neon-amber truncate">{file.name}</a>
+                      <a key={file.path} href={file.url} target="_blank" rel="noreferrer" className="border border-border bg-background p-2 font-mono text-sm hover:border-neon-amber truncate">{file.name}</a>
                     ))}
                   </div>
                 </div>

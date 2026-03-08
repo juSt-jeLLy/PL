@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { WalletProvider } from "@/context/WalletContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import AddRepo from "./pages/AddRepo";
@@ -15,6 +16,7 @@ const queryClient = new QueryClient();
 const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
       <WalletProvider>
       <TooltipProvider>
         <Toaster />
@@ -30,6 +32,7 @@ const App = () => {
         </BrowserRouter>
       </TooltipProvider>
       </WalletProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };
