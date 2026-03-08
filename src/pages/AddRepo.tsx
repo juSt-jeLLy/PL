@@ -284,6 +284,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const [expandedSuggestion, setExpandedSuggestion] = useState<number | null>(null);
   const [findingFilter, setFindingFilter] = useState<string>("ALL");
   const [suggestionFilter, setSuggestionFilter] = useState<string>("ALL");
+  const [selectedFindings, setSelectedFindings] = useState<Set<number>>(new Set());
+  const [isCreatingIssues, setIsCreatingIssues] = useState(false);
+  const [createdIssues, setCreatedIssues] = useState<Array<{number?: number; url?: string; title?: string; error?: string; type?: string}>>([]);
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
+  const [isCreatingSuggestionIssues, setIsCreatingSuggestionIssues] = useState(false);
+  const [createdSuggestionIssues, setCreatedSuggestionIssues] = useState<Array<{number?: number; url?: string; title?: string; error?: string; type?: string}>>([]);
 
   const canFetch = useMemo(() => repoUrl.trim().length > 0, [repoUrl]);
 
@@ -333,9 +339,74 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const filteredFindings = findingFilter === "ALL" 
-    ? securityFindings 
+  const filteredFindings = findingFilter === "ALL"
+    ? securityFindings
     : securityFindings.filter(f => f.severity === findingFilter);
+
+  const toggleFinding = (i: number) => {
+    setSelectedFindings(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+
+  const postIssues = async (items: Array<{severity: string; type: string; file: string; line?: number | string | null; description: string; suggestion: string}>) => {
+    const res = await fetch("/api/github/create-issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: result!.repo.fullName, findings: items }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to create issues");
+    return data.created || [];
+  };
+
+  const createGitHubIssues = async () => {
+    if (selectedFindings.size === 0 || !result) return;
+    setIsCreatingIssues(true);
+    try {
+      const toCreate = [...selectedFindings].map(i => securityFindings[i]);
+      setCreatedIssues(await postIssues(toCreate));
+      setSelectedFindings(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create issues");
+    } finally {
+      setIsCreatingIssues(false);
+    }
+  };
+
+  const toggleSuggestion = (i: number) => {
+    setSelectedSuggestions(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+
+  const createSuggestionIssues = async () => {
+    if (selectedSuggestions.size === 0 || !result) return;
+    setIsCreatingSuggestionIssues(true);
+    try {
+      const toCreate = [...selectedSuggestions].map(i => {
+        const s = codeSuggestions[i];
+        return {
+          severity: s.priority,
+          type: `[${s.category}] ${s.title}`,
+          file: s.file,
+          line: s.line,
+          description: s.description,
+          suggestion: s.example || "See description for implementation details.",
+        };
+      });
+      setCreatedSuggestionIssues(await postIssues(toCreate));
+      setSelectedSuggestions(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create suggestion issues");
+    } finally {
+      setIsCreatingSuggestionIssues(false);
+    }
+  };
 
   const filteredSuggestions = suggestionFilter === "ALL" 
     ? codeSuggestions 
@@ -355,6 +426,10 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     setExpandedFinding(null);
     setExpandedSuggestion(null);
     setAnalysisComplete(false);
+    setSelectedFindings(new Set());
+    setCreatedIssues([]);
+    setSelectedSuggestions(new Set());
+    setCreatedSuggestionIssues([]);
     
     const { owner, repo } = parsed;
 
@@ -648,483 +723,323 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
         {result && (
           <div className="space-y-5">
-            <section className="border-2 border-border bg-card p-4 md:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-display text-xl font-extrabold uppercase">
-                    {result.repo.fullName}
-                  </h2>
-                  <p className="mt-1 font-mono text-sm text-muted-foreground">
-                    {result.repo.description || "No description provided."}
-                  </p>
-                </div>
-                <a
-                  href={result.repo.htmlUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 border-2 border-border bg-background px-3 py-1 font-mono text-xs font-bold uppercase hover:border-neon-cyan hover:text-neon-cyan"
-                >
-                  Open on GitHub
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-                <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                  <div className="text-muted-foreground">Default Branch</div>
-                  <div className="mt-1 font-bold">{result.repo.defaultBranch}</div>
+            {/* ── 1. REPO HEADER ─────────────────────────────────────────── */}
+            <section className="border-2 border-neon-green bg-card p-4 md:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded bg-neon-green/20 flex items-center justify-center">
+                    <Shield className="h-4 w-4 text-neon-green" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-lg font-extrabold uppercase text-neon-green">{result.repo.fullName}</h2>
+                    <p className="font-mono text-xs text-muted-foreground">{result.repo.description || "No description"}</p>
+                  </div>
                 </div>
-                <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                  <div className="text-muted-foreground">Language</div>
-                  <div className="mt-1 font-bold">{result.repo.language || "n/a"}</div>
-                </div>
-                <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                  <div className="text-muted-foreground">Stars</div>
-                  <div className="mt-1 font-bold">{result.repo.stars}</div>
-                </div>
-                <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                  <div className="text-muted-foreground">Forks</div>
-                  <div className="mt-1 font-bold">{result.repo.forks}</div>
-                </div>
-                <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                  <div className="text-muted-foreground">Fetched At</div>
-                  <div className="mt-1 font-bold">{formatDate(result.fetchedAt)}</div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex gap-3 font-mono text-xs text-muted-foreground">
+                    <span>⭐ {result.repo.stars}</span>
+                    <span>🍴 {result.repo.forks}</span>
+                    <span>🔤 {result.repo.language || "n/a"}</span>
+                    <span>🌿 {result.repo.defaultBranch}</span>
+                  </div>
+                  <a href={result.repo.htmlUrl} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 border-2 border-border bg-background px-3 py-1 font-mono text-xs font-bold uppercase hover:border-neon-cyan hover:text-neon-cyan">
+                    GitHub <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <button
+                    onClick={() => result && void runSecurityAnalysis(result)}
+                    disabled={analyzing || loading}
+                    className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-50"
+                  >
+                    {analyzing ? <><Loader2 className="h-4 w-4 animate-spin" />Analyzing…</> : <><Shield className="h-4 w-4" />Run Analysis</>}
+                  </button>
                 </div>
               </div>
             </section>
 
-            {/* AI Code Analysis Section */}
-            <section className="border-2 border-border bg-card p-4 md:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-display text-lg font-extrabold uppercase">
-                    🤖 AI Security Analysis
-                  </h3>
-                  <p className="mt-1 font-mono text-sm text-muted-foreground">
-                    Run AI-powered code analysis to detect security issues and get improvement suggestions
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    if (result) {
-                      void runSecurityAnalysis(result);
-                    }
-                  }}
-                  disabled={analyzing || loading}
-                  className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-xs font-bold uppercase text-primary-foreground disabled:opacity-50"
-                >
-                  {analyzing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Shield className="h-4 w-4" />
-                      Re-Run Analysis
-                    </>
-                  )}
-                </button>
-              </div>
+            {/* ── 2. ANALYSIS LOG + STATS ────────────────────────────────── */}
+            {(analysisLogs.length > 0 || analysisStats) && (
+              <section className="border-2 border-border bg-card p-4">
+                {analysisStats && (
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+                    <div className="border-2 border-neon-cyan/40 bg-background p-3 font-mono text-xs">
+                      <div className="text-muted-foreground">Files</div>
+                      <div className="mt-1 text-xl font-bold text-neon-cyan">{analysisStats.filesAnalyzed}</div>
+                    </div>
+                    <div className="border-2 border-neon-red/40 bg-background p-3 font-mono text-xs">
+                      <div className="text-muted-foreground">Security Issues</div>
+                      <div className="mt-1 text-xl font-bold text-neon-red">{analysisStats.issuesFound}</div>
+                    </div>
+                    <div className="border-2 border-neon-amber/40 bg-background p-3 font-mono text-xs">
+                      <div className="text-muted-foreground">Improvements</div>
+                      <div className="mt-1 text-xl font-bold text-neon-amber">{analysisStats.suggestionsGenerated}</div>
+                    </div>
+                    <div className="border-2 border-border bg-background p-3 font-mono text-xs">
+                      <div className="text-muted-foreground">Chunks Scanned</div>
+                      <div className="mt-1 text-xl font-bold">{analysisStats.chunksAnalyzed}</div>
+                    </div>
+                  </div>
+                )}
+                {analysisLogs.length > 0 && (
+                  <div className="bg-background border-2 border-border p-3">
+                    <div className="text-muted-foreground font-mono text-xs font-bold uppercase mb-2">Analysis Log</div>
+                    <div className="max-h-28 space-y-0.5 overflow-auto">
+                      {analysisLogs.map((log, i) => (
+                        <div key={i} className={`font-mono text-xs ${log.type === "error" ? "text-neon-red" : log.type === "warn" ? "text-neon-amber" : log.type === "success" ? "text-neon-green" : "text-muted-foreground"}`}>
+                          <span className="opacity-40 mr-2">{new Date(log.ts).toLocaleTimeString()}</span>{log.msg}
+                        </div>
+                      ))}
+                      {analyzing && <div className="font-mono text-xs text-neon-green animate-pulse">⏳ Working…</div>}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
 
-              {/* Analysis Stats */}
-              {analysisStats && (
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                    <div className="text-muted-foreground">Files Analyzed</div>
-                    <div className="mt-1 font-bold text-neon-cyan">{analysisStats.filesAnalyzed}</div>
-                  </div>
-                  <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                    <div className="text-muted-foreground">Security Issues</div>
-                    <div className="mt-1 font-bold text-neon-red">{analysisStats.issuesFound}</div>
-                  </div>
-                  <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                    <div className="text-muted-foreground">Suggestions</div>
-                    <div className="mt-1 font-bold text-neon-amber">{analysisStats.suggestionsGenerated}</div>
-                  </div>
-                  <div className="border-2 border-border bg-background p-3 font-mono text-xs">
-                    <div className="text-muted-foreground">Code Chunks</div>
-                    <div className="mt-1 font-bold">{analysisStats.chunksAnalyzed}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Analysis Log */}
-              {analysisLogs.length > 0 && (
-                <div className="mt-4 border-2 border-border bg-background p-4">
-                  <h4 className="mb-2 font-mono text-xs font-bold uppercase text-muted-foreground">Analysis Log</h4>
-                  <div className="max-h-32 space-y-1 overflow-auto">
-                    {analysisLogs.map((log, i) => (
-                      <div key={i} className={`font-mono text-xs ${
-                        log.type === "error" ? "text-neon-red" : 
-                        log.type === "warn" ? "text-neon-amber" : 
-                        log.type === "success" ? "text-neon-green" : 
-                        "text-muted-foreground"
-                      }`}>
-                        <span className="opacity-50 mr-2">{new Date(log.ts).toLocaleTimeString()}</span>
-                        {log.msg}
-                      </div>
-                    ))}
-                    {analyzing && <div className="font-mono text-xs text-neon-green">⏳ Working...</div>}
-                  </div>
-                </div>
-              )}
-            </section>
-
-            {/* Analysis Results */}
+            {/* ── 3. ANALYSIS RESULTS ────────────────────────────────────── */}
             {analysisComplete && (
               <div className="grid gap-5 lg:grid-cols-2">
+
                 {/* Security Findings */}
-                <section className="border-2 border-border bg-card p-4 md:p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display text-lg font-extrabold uppercase flex items-center gap-2">
-                      <Lock className="h-5 w-5 text-neon-red" />
+                <section className="border-2 border-neon-red/50 bg-card p-4 md:p-5">
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <h3 className="font-display text-base font-extrabold uppercase flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-neon-red" />
                       Security Issues ({filteredFindings.length})
                     </h3>
-                    <div className="flex items-center gap-2">
-                      <select 
-                        value={findingFilter} 
-                        onChange={(e) => setFindingFilter(e.target.value)}
-                        className="border-2 border-border bg-background px-2 py-1 font-mono text-xs"
-                      >
-                        <option value="ALL">All Severities</option>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select value={findingFilter} onChange={e => setFindingFilter(e.target.value)}
+                        className="border-2 border-border bg-background px-2 py-1 font-mono text-xs">
+                        <option value="ALL">All</option>
                         <option value="CRITICAL">Critical</option>
                         <option value="HIGH">High</option>
                         <option value="MEDIUM">Medium</option>
                         <option value="LOW">Low</option>
                         <option value="INFO">Info</option>
                       </select>
+                      {selectedFindings.size > 0 && (
+                        <button onClick={createGitHubIssues} disabled={isCreatingIssues}
+                          className="font-mono text-xs font-bold px-3 py-1 rounded border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 transition-colors disabled:opacity-50">
+                          {isCreatingIssues ? "Creating…" : `🐛 Open ${selectedFindings.size} on GitHub`}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="space-y-3 max-h-96 overflow-auto">
-                    {filteredFindings.length === 0 && findingFilter === "ALL" && (
-                      <div className="border-2 border-green-500 bg-green-500/10 p-6 text-center rounded-lg">
-                        <CheckCircle className="h-12 w-12 text-green-400 mx-auto mb-3" />
-                        <div className="font-mono text-lg font-bold text-green-400">🎉 No Security Issues Found!</div>
-                        <div className="mt-2 font-mono text-sm text-muted-foreground">Your code appears to be secure</div>
+                  <div className="space-y-2 max-h-96 overflow-auto">
+                    {filteredFindings.length === 0 && (
+                      <div className="border-2 border-neon-green bg-neon-green/10 p-5 text-center rounded">
+                        <CheckCircle className="h-8 w-8 text-neon-green mx-auto mb-2" />
+                        <div className="font-mono text-sm font-bold text-neon-green">No Issues Found</div>
                       </div>
                     )}
-                    
-                    {filteredFindings.length === 0 && findingFilter !== "ALL" && (
-                      <div className="border-2 border-border bg-background p-4 text-center rounded-lg">
-                        <div className="font-mono text-sm text-muted-foreground">No {findingFilter.toLowerCase()} severity issues found</div>
-                      </div>
-                    )}
-                    
                     {filteredFindings.map((finding, i) => {
                       const isExpanded = expandedFinding === i;
+                      const isSelected = selectedFindings.has(i);
                       return (
-                        <div key={i} className={`brutal-card ${getSeverityColor(finding.severity)} transition-all duration-200 hover:shadow-lg cursor-pointer`}>
-                          <div 
-                            onClick={() => setExpandedFinding(isExpanded ? null : i)}
-                            className="p-4"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3 flex-1">
-                                <div className="flex items-center gap-2">
-                                  {getSeverityIcon(finding.severity)}
-                                  <span className="font-mono text-xs font-bold px-2 py-1 bg-current/20 rounded">
-                                    {finding.severity}
-                                  </span>
-                                </div>
-                                <div className="flex-1">
-                                  <h4 className="font-mono text-sm font-bold mb-1">{finding.type}</h4>
-                                  <div className="font-mono text-xs opacity-70 flex items-center gap-2">
-                                    <Code className="h-3 w-3" />
-                                    {finding.file}{finding.line ? `:${finding.line}` : ""}
+                        <div key={i} className={`border-2 ${getSeverityColor(finding.severity)} transition-all ${isSelected ? "ring-2 ring-blue-500" : ""}`}>
+                          <div className="p-3">
+                            <div className="flex items-start gap-2">
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleFinding(i)}
+                                className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
+                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedFinding(isExpanded ? null : i)}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {getSeverityIcon(finding.severity)}
+                                    <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-current/20 rounded shrink-0">{finding.severity}</span>
+                                    <span className="font-mono text-xs font-bold truncate">{finding.type}</span>
                                   </div>
+                                  {isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
                                 </div>
-                              </div>
-                              <div className="ml-2">
-                                {isExpanded ? 
-                                  <ChevronDown className="h-4 w-4" /> : 
-                                  <ChevronRight className="h-4 w-4" />
-                                }
+                                <div className="font-mono text-xs opacity-60 mt-0.5 flex items-center gap-1">
+                                  <Code className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{finding.file}{finding.line ? `:${finding.line}` : ""}</span>
+                                </div>
+                                {isExpanded && (
+                                  <div className="mt-3 space-y-2 border-t border-current/20 pt-3">
+                                    <p className="font-mono text-xs leading-relaxed">{finding.description}</p>
+                                    <div className="bg-background/50 border border-current/30 rounded p-2">
+                                      <div className="font-mono text-xs font-bold opacity-60 mb-1 flex items-center gap-1"><Zap className="h-3 w-3" />FIX</div>
+                                      <p className="font-mono text-xs">{finding.suggestion}</p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            
-                            {isExpanded && (
-                              <div className="mt-4 space-y-3 animate-in slide-in-from-top-2">
-                                <div className="border-t border-current/20 pt-3">
-                                  <h5 className="font-mono text-xs font-bold mb-2 opacity-70">DESCRIPTION</h5>
-                                  <p className="font-mono text-xs leading-relaxed">{finding.description}</p>
-                                </div>
-                                
-                                <div className="border-t border-current/20 pt-3">
-                                  <h5 className="font-mono text-xs font-bold mb-2 opacity-70 flex items-center gap-1">
-                                    <Zap className="h-3 w-3" />
-                                    RECOMMENDED FIX
-                                  </h5>
-                                  <div className="bg-background/50 border border-current/30 rounded p-3">
-                                    <p className="font-mono text-xs">{finding.suggestion}</p>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex items-center gap-2 pt-2">
-                                  <button className="font-mono text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1 rounded hover:bg-green-500/30 transition-colors">
-                                    Mark as Fixed
-                                  </button>
-                                  <button className="font-mono text-xs bg-gray-500/20 text-gray-400 border border-gray-500/30 px-3 py-1 rounded hover:bg-gray-500/30 transition-colors">
-                                    Ignore
-                                  </button>
-                                </div>
-                              </div>
-                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  {createdIssues.length > 0 && (
+                    <div className="mt-3 border-2 border-blue-500/40 bg-blue-500/5 rounded overflow-hidden">
+                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-xs font-bold text-blue-300">
+                        ✅ {createdIssues.filter(x => !x.error).length}/{createdIssues.length} Issues Created
+                      </div>
+                      <div className="p-2 flex flex-col gap-1.5">
+                        {createdIssues.map((issue, i) => (
+                          <div key={i} className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs font-mono ${issue.error ? "bg-red-500/10 text-red-400" : "bg-background text-muted-foreground"}`}>
+                            {issue.error ? <span>❌ {issue.type}: {issue.error}</span> : <>
+                              <span className="text-neon-green shrink-0">✅</span>
+                              <span className="opacity-60 shrink-0">#{issue.number}</span>
+                              <a href={issue.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate">{issue.title}</a>
+                            </>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </section>
 
-                {/* Code Suggestions */}
-                <section className="border-2 border-border bg-card p-4 md:p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display text-lg font-extrabold uppercase flex items-center gap-2">
-                      <Zap className="h-5 w-5 text-neon-cyan" />
+                {/* Improvements */}
+                <section className="border-2 border-neon-amber/50 bg-card p-4 md:p-5">
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <h3 className="font-display text-base font-extrabold uppercase flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-neon-amber" />
                       Improvements ({filteredSuggestions.length})
                     </h3>
-                    <div className="flex items-center gap-2">
-                      <select 
-                        value={suggestionFilter} 
-                        onChange={(e) => setSuggestionFilter(e.target.value)}
-                        className="border-2 border-border bg-background px-2 py-1 font-mono text-xs"
-                      >
-                        <option value="ALL">All Categories</option>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select value={suggestionFilter} onChange={e => setSuggestionFilter(e.target.value)}
+                        className="border-2 border-border bg-background px-2 py-1 font-mono text-xs">
+                        <option value="ALL">All</option>
                         <option value="Architecture">Architecture</option>
                         <option value="Readability">Readability</option>
                         <option value="Testing">Testing</option>
                         <option value="Edge Case">Edge Cases</option>
                         <option value="Better Approach">Better Approach</option>
                       </select>
+                      {selectedSuggestions.size > 0 && (
+                        <button onClick={createSuggestionIssues} disabled={isCreatingSuggestionIssues}
+                          className="font-mono text-xs font-bold px-3 py-1 rounded border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 transition-colors disabled:opacity-50">
+                          {isCreatingSuggestionIssues ? "Creating…" : `🐛 Open ${selectedSuggestions.size} on GitHub`}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="space-y-3 max-h-96 overflow-auto">
-                    {filteredSuggestions.length === 0 && suggestionFilter === "ALL" && (
-                      <div className="border-2 border-blue-500 bg-blue-500/10 p-6 text-center rounded-lg">
-                        <CheckCircle className="h-12 w-12 text-blue-400 mx-auto mb-3" />
-                        <div className="font-mono text-lg font-bold text-blue-400">✨ Code Looks Great!</div>
-                        <div className="mt-2 font-mono text-sm text-muted-foreground">No improvement suggestions at this time</div>
+                  <div className="space-y-2 max-h-96 overflow-auto">
+                    {filteredSuggestions.length === 0 && (
+                      <div className="border-2 border-blue-500 bg-blue-500/10 p-5 text-center rounded">
+                        <CheckCircle className="h-8 w-8 text-blue-400 mx-auto mb-2" />
+                        <div className="font-mono text-sm font-bold text-blue-400">Code Looks Great!</div>
                       </div>
                     )}
-                    
-                    {filteredSuggestions.length === 0 && suggestionFilter !== "ALL" && (
-                      <div className="border-2 border-border bg-background p-4 text-center rounded-lg">
-                        <div className="font-mono text-sm text-muted-foreground">No {suggestionFilter.toLowerCase()} suggestions found</div>
-                      </div>
-                    )}
-                    
                     {filteredSuggestions.map((suggestion, i) => {
                       const isExpanded = expandedSuggestion === i;
+                      const isSelected = selectedSuggestions.has(i);
                       return (
-                        <div key={i} className={`brutal-card ${getPriorityColor(suggestion.priority)} transition-all duration-200 hover:shadow-lg cursor-pointer`}>
-                          <div 
-                            onClick={() => setExpandedSuggestion(isExpanded ? null : i)}
-                            className="p-4"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-3 flex-1">
-                                <div className="flex items-center gap-2">
-                                  {getCategoryIcon(suggestion.category)}
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs font-bold px-2 py-1 bg-current/20 rounded">
-                                      {suggestion.priority}
-                                    </span>
-                                    <span className="font-mono text-xs bg-neon-cyan/20 text-neon-cyan px-2 py-1 rounded">
-                                      {suggestion.category}
-                                    </span>
+                        <div key={i} className={`border-2 ${getPriorityColor(suggestion.priority)} transition-all ${isSelected ? "ring-2 ring-blue-500" : ""}`}>
+                          <div className="p-3">
+                            <div className="flex items-start gap-2">
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleSuggestion(i)}
+                                className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
+                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedSuggestion(isExpanded ? null : i)}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                    {getCategoryIcon(suggestion.category)}
+                                    <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-current/20 rounded shrink-0">{suggestion.priority}</span>
+                                    <span className="font-mono text-xs bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded shrink-0">{suggestion.category}</span>
+                                    <span className="font-mono text-xs font-bold truncate">{suggestion.title}</span>
                                   </div>
+                                  {isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
                                 </div>
-                                <div className="flex-1">
-                                  <h4 className="font-mono text-sm font-bold mb-1">{suggestion.title}</h4>
-                                  <div className="font-mono text-xs opacity-70 flex items-center gap-2">
-                                    <Code className="h-3 w-3" />
-                                    {suggestion.file}{suggestion.line ? `:${suggestion.line}` : ""}
-                                  </div>
+                                <div className="font-mono text-xs opacity-60 mt-0.5 flex items-center gap-1">
+                                  <Code className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{suggestion.file}{suggestion.line ? `:${suggestion.line}` : ""}</span>
                                 </div>
-                              </div>
-                              <div className="ml-2">
-                                {isExpanded ? 
-                                  <ChevronDown className="h-4 w-4" /> : 
-                                  <ChevronRight className="h-4 w-4" />
-                                }
-                              </div>
-                            </div>
-                            
-                            {isExpanded && (
-                              <div className="mt-4 space-y-3 animate-in slide-in-from-top-2">
-                                <div className="border-t border-current/20 pt-3">
-                                  <h5 className="font-mono text-xs font-bold mb-2 opacity-70">DESCRIPTION</h5>
-                                  <p className="font-mono text-xs leading-relaxed">{suggestion.description}</p>
-                                </div>
-                                
-                                {suggestion.example && (
-                                  <div className="border-t border-current/20 pt-3">
-                                    <h5 className="font-mono text-xs font-bold mb-2 opacity-70 flex items-center gap-1">
-                                      <Code className="h-3 w-3" />
-                                      CODE EXAMPLE
-                                    </h5>
-                                    <div className="bg-background border border-current/30 rounded overflow-hidden">
-                                      <div className="bg-current/10 px-3 py-1 border-b border-current/20">
-                                        <span className="font-mono text-xs opacity-70">Suggested Implementation</span>
+                                {isExpanded && (
+                                  <div className="mt-3 space-y-2 border-t border-current/20 pt-3">
+                                    <p className="font-mono text-xs leading-relaxed">{suggestion.description}</p>
+                                    {suggestion.example && (
+                                      <div className="bg-background border border-current/30 rounded overflow-hidden">
+                                        <div className="bg-current/10 px-2 py-1 border-b border-current/20 font-mono text-xs opacity-60">Example</div>
+                                        <pre className="p-2 font-mono text-xs overflow-auto"><code>{suggestion.example}</code></pre>
                                       </div>
-                                      <pre className="p-3 font-mono text-xs overflow-auto bg-background/50">
-                                        <code>{suggestion.example}</code>
-                                      </pre>
-                                    </div>
+                                    )}
                                   </div>
                                 )}
-                                
-                                <div className="flex items-center gap-2 pt-2">
-                                  <div className="flex items-center gap-1 text-xs">
-                                    <span className="font-mono opacity-70">Impact:</span>
-                                    <div className="flex">
-                                      {[1,2,3,4,5].map(star => (
-                                        <div key={star} className={`w-3 h-3 ${star <= (suggestion.priority === "HIGH" ? 5 : suggestion.priority === "MEDIUM" ? 3 : 1) ? "bg-current" : "bg-current/20"} mr-1 rounded-sm`} />
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <button className="font-mono text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded hover:bg-blue-500/30 transition-colors ml-auto">
-                                    Apply Suggestion
-                                  </button>
-                                </div>
                               </div>
-                            )}
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  {createdSuggestionIssues.length > 0 && (
+                    <div className="mt-3 border-2 border-blue-500/40 bg-blue-500/5 rounded overflow-hidden">
+                      <div className="px-3 py-2 border-b border-blue-500/30 font-mono text-xs font-bold text-blue-300">
+                        ✅ {createdSuggestionIssues.filter(x => !x.error).length}/{createdSuggestionIssues.length} Issues Created
+                      </div>
+                      <div className="p-2 flex flex-col gap-1.5">
+                        {createdSuggestionIssues.map((issue, i) => (
+                          <div key={i} className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs font-mono ${issue.error ? "bg-red-500/10 text-red-400" : "bg-background text-muted-foreground"}`}>
+                            {issue.error ? <span>❌ {issue.type}: {issue.error}</span> : <>
+                              <span className="text-neon-green shrink-0">✅</span>
+                              <span className="opacity-60 shrink-0">#{issue.number}</span>
+                              <a href={issue.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate">{issue.title}</a>
+                            </>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </section>
               </div>
             )}
 
-            <section className="grid gap-5 lg:grid-cols-2">
-              <div className="border-2 border-border bg-card p-4 md:p-6">
-                <h3 className="mb-3 font-display text-lg font-extrabold uppercase">
-                  Issues ({result.summary.issueCount})
-                </h3>
-                <div className="max-h-96 space-y-2 overflow-auto">
-                  {result.issues.length === 0 && (
-                    <p className="font-mono text-xs text-muted-foreground">No issues found.</p>
-                  )}
-                  {result.issues.map((issue) => (
-                    <a
-                      key={issue.id}
-                      href={issue.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block border-2 border-border bg-background p-3 hover:border-neon-cyan"
-                    >
-                      <div className="font-mono text-xs text-muted-foreground">
-                        #{issue.number} by {issue.user}
-                      </div>
-                      <div className="mt-1 font-mono text-sm font-bold">{issue.title}</div>
-                      <div className="mt-2 font-mono text-xs text-muted-foreground">
-                        State: {issue.state} | Updated: {formatDate(issue.updatedAt)}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-2 border-border bg-card p-4 md:p-6">
-                <h3 className="mb-3 font-display text-lg font-extrabold uppercase">
-                  Pull Requests ({result.summary.pullRequestCount})
-                </h3>
-                <div className="max-h-96 space-y-2 overflow-auto">
-                  {result.pullRequests.length === 0 && (
-                    <p className="font-mono text-xs text-muted-foreground">
-                      No pull requests found.
-                    </p>
-                  )}
-                  {result.pullRequests.map((pr) => (
-                    <a
-                      key={pr.id}
-                      href={pr.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block border-2 border-border bg-background p-3 hover:border-neon-green"
-                    >
-                      <div className="font-mono text-xs text-muted-foreground">
-                        #{pr.number} by {pr.user}
-                      </div>
-                      <div className="mt-1 font-mono text-sm font-bold">{pr.title}</div>
-                      <div className="mt-2 font-mono text-xs text-muted-foreground">
-                        State: {pr.state}
-                        {pr.draft ? " (draft)" : ""} | Updated: {formatDate(pr.updatedAt)}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="border-2 border-border bg-card p-4 md:p-6">
-              <h3 className="mb-3 font-display text-lg font-extrabold uppercase">
-                Root Files ({result.summary.rootFileCount})
-              </h3>
-              <div className="grid gap-2 md:grid-cols-2">
-                {result.rootFiles.length === 0 && (
-                  <p className="font-mono text-xs text-muted-foreground">No root files found.</p>
-                )}
-                {result.rootFiles.map((file) => (
-                  <a
-                    key={`${file.path}-${file.type}`}
-                    href={file.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="border-2 border-border bg-background p-3 font-mono text-xs hover:border-neon-amber"
-                  >
-                    <div className="font-bold">{file.name}</div>
-                    <div className="mt-1 text-muted-foreground">
-                      {file.type} · {file.path}
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </section>
-
-            <section className="border-2 border-border bg-card p-4 md:p-6">
-              <h3 className="mb-2 font-display text-lg font-extrabold uppercase">
-                Full File Tree Snapshot
-              </h3>
-              <p className="mb-3 font-mono text-xs text-muted-foreground">
-                {result.summary.treeEntryCount} entries
-                {result.summary.treeTruncated ? " (truncated for safety)" : ""}
-              </p>
-              <div className="max-h-72 space-y-2 overflow-auto">
-                {result.fileTree.slice(0, 120).map((entry) => (
-                  <a
-                    key={`${entry.sha}-${entry.path}`}
-                    href={entry.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block border-2 border-border bg-background p-2 font-mono text-xs hover:border-neon-cyan"
-                  >
-                    {entry.type} · {entry.path}
-                  </a>
-                ))}
-                {result.fileTree.length === 0 && (
-                  <p className="font-mono text-xs text-muted-foreground">
-                    No tree entries available.
-                  </p>
-                )}
-              </div>
-            </section>
-
-            <details className="border-2 border-border bg-card p-4">
-              <summary className="cursor-pointer font-mono text-xs font-bold uppercase">
-                Raw Payload (debug)
+            {/* ── 4. REPO DETAILS ────────────────────────────────────────── */}
+            <details className="group border-2 border-border bg-card" open>
+              <summary className="cursor-pointer px-4 py-3 font-mono text-xs font-bold uppercase text-muted-foreground flex items-center gap-2 select-none hover:text-neon-cyan">
+                <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                Repo Details — Issues · PRs · Files
               </summary>
-              <pre className="mt-3 max-h-96 overflow-auto bg-background p-3 font-mono text-xs">
-                {JSON.stringify(result, null, 2)}
-              </pre>
+              <div className="px-4 pb-4 space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">GitHub Issues ({result.summary.issueCount})</h4>
+                    <div className="max-h-48 space-y-2 overflow-auto">
+                      {result.issues.length === 0 && <p className="font-mono text-xs text-muted-foreground">No issues.</p>}
+                      {result.issues.map(issue => (
+                        <a key={issue.id} href={issue.url} target="_blank" rel="noreferrer"
+                          className="block border-2 border-border bg-background p-2 hover:border-neon-cyan font-mono text-xs">
+                          <span className="text-muted-foreground">#{issue.number}</span>
+                          <span className={`ml-2 px-1 rounded text-xs ${issue.state === "open" ? "bg-neon-green/20 text-neon-green" : "bg-gray-500/20 text-gray-400"}`}>{issue.state}</span>
+                          <div className="mt-0.5 font-bold truncate">{issue.title}</div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">Pull Requests ({result.summary.pullRequestCount})</h4>
+                    <div className="max-h-48 space-y-2 overflow-auto">
+                      {result.pullRequests.length === 0 && <p className="font-mono text-xs text-muted-foreground">No PRs.</p>}
+                      {result.pullRequests.map(pr => (
+                        <a key={pr.id} href={pr.url} target="_blank" rel="noreferrer"
+                          className="block border-2 border-border bg-background p-2 hover:border-neon-green font-mono text-xs">
+                          <span className="text-muted-foreground">#{pr.number}</span>
+                          <span className={`ml-2 px-1 rounded text-xs ${pr.state === "open" ? "bg-neon-green/20 text-neon-green" : "bg-purple-500/20 text-purple-400"}`}>{pr.state}{pr.draft ? " draft" : ""}</span>
+                          <div className="mt-0.5 font-bold truncate">{pr.title}</div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-mono text-xs font-bold uppercase text-muted-foreground mb-2">Root Files ({result.summary.rootFileCount})</h4>
+                  <div className="grid gap-1.5 md:grid-cols-3 max-h-32 overflow-auto">
+                    {result.rootFiles.map(file => (
+                      <a key={file.path} href={file.url} target="_blank" rel="noreferrer"
+                        className="border border-border bg-background p-2 font-mono text-xs hover:border-neon-amber truncate">
+                        {file.name}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </details>
+
           </div>
         )}
+
       </div>
     </div>
   );

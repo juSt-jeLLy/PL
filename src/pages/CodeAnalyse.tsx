@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 // ── config ────────────────────────────────────────────────────────────────────
-const BACKEND_URL = "http://localhost:3005"; // your proxy server
+const BACKEND_URL = "http://localhost:3005"; // Groq proxy
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function parseRepoURL(url) {
@@ -185,10 +185,48 @@ export default function CodeAnalyser() {
   const [errorMsg, setErrorMsg]     = useState("");
   const [filter, setFilter]         = useState("ALL");
   const [expandedIdx, setExpandedIdx] = useState(null);
+  const [selectedFindings, setSelectedFindings] = useState(new Set());
+  const [isCreatingIssues, setIsCreatingIssues] = useState(false);
+  const [createdIssues, setCreatedIssues] = useState([]);
+  const [parsedRepo, setParsedRepo] = useState(null);
   const logsEndRef = useRef(null);
 
   const addLog = (msg, type = "info") =>
     setLogs(prev => [...prev, { msg, type, ts: Date.now() }]);
+
+  function toggleFinding(i) {
+    setSelectedFindings(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }
+
+  async function createGitHubIssues() {
+    if (selectedFindings.size === 0 || !parsedRepo) return;
+    setIsCreatingIssues(true);
+    try {
+      const toCreate = [...selectedFindings].map(i => findings[i]);
+      const res = await fetch("/api/github/create-issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: `${parsedRepo.owner}/${parsedRepo.repo}`,
+          findings: toCreate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create issues");
+      setCreatedIssues(data.created || []);
+      setSelectedFindings(new Set());
+      const ok = (data.created || []).filter(i => !i.error).length;
+      addLog(`✅ Created ${ok} GitHub issue(s)`, "success");
+    } catch (err) {
+      addLog(`❌ Failed to create issues: ${err.message}`, "error");
+    } finally {
+      setIsCreatingIssues(false);
+    }
+  }
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -204,6 +242,7 @@ export default function CodeAnalyser() {
     setPhase("running");
     setLogs([]); setFindings([]); setGhAlerts(null);
     setStats(null); setErrorMsg(""); setExpandedIdx(null);
+    setSelectedFindings(new Set()); setCreatedIssues([]); setParsedRepo(parsed);
 
     const { owner, repo } = parsed;
 
@@ -382,27 +421,53 @@ export default function CodeAnalyser() {
                     {sev}
                   </button>
                 ))}
+                {selectedFindings.size > 0 && (
+                  <button
+                    onClick={createGitHubIssues}
+                    disabled={isCreatingIssues}
+                    style={{ marginLeft: "auto", background: isCreatingIssues ? "#1a2535" : "linear-gradient(135deg,#0077cc,#005fa3)", border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 11, fontWeight: 700, color: isCreatingIssues ? "#4a6070" : "#fff", cursor: isCreatingIssues ? "not-allowed" : "pointer", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    {isCreatingIssues ? "CREATING…" : `🐛 CREATE ${selectedFindings.size} ISSUE${selectedFindings.size > 1 ? "S" : ""} ON GITHUB`}
+                  </button>
+                )}
               </div>
               <div style={{ height: 320, overflowY: "auto" }}>
                 {filteredFindings.map((f, i) => {
                   const col = SEVERITY_COLORS[f.severity] || SEVERITY_COLORS.INFO;
                   const isOpen = expandedIdx === i;
+                  const isSelected = selectedFindings.has(i);
                   return (
-                    <div key={i} onClick={() => setExpandedIdx(isOpen ? null : i)}
-                      style={{ borderBottom: "1px solid #1a2535", padding: "12px 16px", cursor: "pointer", background: isOpen ? col.bg : "transparent", transition: "background 0.15s" }}>
+                    <div
+                      key={i}
+                      style={{ borderBottom: "1px solid #1a2535", padding: "12px 16px", background: isSelected ? `${col.bg}cc` : isOpen ? col.bg : "transparent", transition: "background 0.15s", outline: isSelected ? `1px solid ${col.border}` : "none" }}
+                    >
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ background: col.badge, color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 3, letterSpacing: "0.1em", flexShrink: 0 }}>{f.severity}</span>
-                        <span style={{ fontSize: 13, color: col.text, fontWeight: 600 }}>{f.type}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "#4a6070", marginTop: 4 }}>{f.file}{f.line ? `:${f.line}` : ""}</div>
-                      {isOpen && (
-                        <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.7 }}>
-                          <div style={{ color: "#c8d6e5", marginBottom: 8 }}>{f.description}</div>
-                          <div style={{ background: "#060a0e", border: `1px solid ${col.border}`, borderRadius: 6, padding: "10px 12px", color: "#00ff88", fontSize: 11 }}>
-                            💡 {f.suggestion}
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleFinding(i)}
+                          onClick={e => e.stopPropagation()}
+                          style={{ width: 14, height: 14, accentColor: col.badge, cursor: "pointer", flexShrink: 0 }}
+                        />
+                        <div
+                          style={{ flex: 1, cursor: "pointer" }}
+                          onClick={() => setExpandedIdx(isOpen ? null : i)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ background: col.badge, color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 3, letterSpacing: "0.1em", flexShrink: 0 }}>{f.severity}</span>
+                            <span style={{ fontSize: 13, color: col.text, fontWeight: 600 }}>{f.type}</span>
                           </div>
+                          <div style={{ fontSize: 11, color: "#4a6070", marginTop: 4 }}>{f.file}{f.line ? `:${f.line}` : ""}</div>
+                          {isOpen && (
+                            <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.7 }}>
+                              <div style={{ color: "#c8d6e5", marginBottom: 8 }}>{f.description}</div>
+                              <div style={{ background: "#060a0e", border: `1px solid ${col.border}`, borderRadius: 6, padding: "10px 12px", color: "#00ff88", fontSize: 11 }}>
+                                💡 {f.suggestion}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
@@ -468,6 +533,40 @@ export default function CodeAnalyser() {
             </div>
           )}
         </div>
+
+        {/* Created GitHub issues confirmation */}
+        {createdIssues.length > 0 && (
+          <div style={{ marginTop: 24, background: "#001a0a", border: "1px solid #00aa55", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ padding: "10px 16px", borderBottom: "1px solid #00aa55", fontSize: 11, color: "#00ff88", letterSpacing: "0.12em", fontWeight: 700 }}>
+              🐛 GITHUB ISSUES CREATED ({createdIssues.filter(i => !i.error).length}/{createdIssues.length})
+            </div>
+            <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              {createdIssues.map((issue, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: issue.error ? "#1a0000" : "#060a0e", borderRadius: 6, border: `1px solid ${issue.error ? "#ff3333" : "#00aa55"}` }}>
+                  {issue.error ? (
+                    <>
+                      <span style={{ color: "#ff4444", fontSize: 12 }}>❌</span>
+                      <span style={{ color: "#ff4444", fontSize: 12 }}>{issue.type}: {issue.error}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ color: "#00ff88", fontSize: 12 }}>✅</span>
+                      <span style={{ color: "#4a6070", fontSize: 11, fontFamily: "monospace" }}>#{issue.number}</span>
+                      <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#00aaff", fontSize: 12, textDecoration: "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        onMouseOver={e => (e.currentTarget.style.textDecoration = "underline")}
+                        onMouseOut={e => (e.currentTarget.style.textDecoration = "none")}
+                      >
+                        {issue.title}
+                      </a>
+                      <span style={{ color: "#2a3a4a", fontSize: 10 }}>↗</span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* GitHub native alerts */}
         {ghAlerts && (ghAlerts.codeScan.length + ghAlerts.dependabot.length + ghAlerts.secrets.length) > 0 && (
