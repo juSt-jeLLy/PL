@@ -186,7 +186,7 @@ export default function AddRepo() {
 
 export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const { isConnected } = useWallet();
-  const { registerRepo, batchCreateBounties, getRepoByUrl } = useContract();
+  const { registerRepo, batchCreateBounties, getRepoByUrl, getRepoBounties } = useContract();
 
   const [repoUrl, setRepoUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -207,6 +207,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const [issueSeverities, setIssueSeverities] = useState<Record<number, number>>({});
   const [isCreatingIssueBounties, setIsCreatingIssueBounties] = useState(false);
   const [issueBountiesCreated, setIssueBountiesCreated] = useState(false);
+  const [registeredIssueUrls, setRegisteredIssueUrls] = useState<Set<string>>(new Set());
 
   // ── AI Analysis ───────────────────────────────────────────────────────────
   const [analyzing, setAnalyzing] = useState(false);
@@ -238,6 +239,13 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const activeRepoId = registeredRepoId ?? existingRepoId;
   const allCreatedIssues = [...createdIssues, ...createdSuggestionIssues].filter(i => !i.error && i.url);
   const openIssues = result?.issues.filter(i => i.state === "open") ?? [];
+
+  useEffect(() => {
+    if (activeRepoId == null) return;
+    getRepoBounties(activeRepoId).then(bounties => {
+      setRegisteredIssueUrls(new Set(bounties.map(b => b.githubIssueUrl)));
+    });
+  }, [activeRepoId, getRepoBounties]);
 
   const addAnalysisLog = useCallback((msg: string, type = "info") => {
     setAnalysisLogs(prev => [...prev, { msg, type, ts: Date.now() }]);
@@ -623,25 +631,30 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                 </div>
                 <div className="max-h-64 space-y-2 overflow-auto">
-                  {openIssues.map((issue, idx) => (
-                    <div key={issue.id} className={`border-2 p-3 ${selectedIssues.has(idx) ? "border-neon-amber bg-neon-amber/10" : "border-border bg-background"}`}>
-                      <div className="flex items-start gap-2">
-                        <input type="checkbox" checked={selectedIssues.has(idx)} onChange={() => toggle(selectedIssues, setSelectedIssues, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-amber-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-mono text-sm font-bold truncate">#{issue.number} {issue.title}</div>
-                          <div className="font-mono text-sm text-muted-foreground">by {issue.user} · {formatDate(issue.createdAt)}</div>
-                        </div>
-                        {selectedIssues.has(idx) && (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <select value={issueSeverities[idx] ?? 1} onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))} className="border border-border bg-background px-1 py-0.5 font-mono text-sm">
-                              <option value={0}>LOW</option><option value={1}>MEDIUM</option><option value={2}>HIGH</option><option value={3}>CRITICAL</option>
-                            </select>
-                            <input type="number" step="0.001" min="0.001" placeholder="ETH" value={issueBountyAmounts[idx] || "0.001"} onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))} className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-sm" />
+                  {openIssues.map((issue, idx) => {
+                    const alreadyRegistered = registeredIssueUrls.has(issue.url);
+                    return (
+                      <div key={issue.id} className={`border-2 p-3 ${alreadyRegistered ? "border-border bg-background opacity-50" : selectedIssues.has(idx) ? "border-neon-amber bg-neon-amber/10" : "border-border bg-background"}`}>
+                        <div className="flex items-start gap-2">
+                          <input type="checkbox" disabled={alreadyRegistered} checked={selectedIssues.has(idx)} onChange={() => toggle(selectedIssues, setSelectedIssues, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-amber-500 shrink-0 disabled:cursor-not-allowed" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono text-sm font-bold truncate">#{issue.number} {issue.title}</div>
+                            <div className="font-mono text-sm text-muted-foreground">by {issue.user} · {formatDate(issue.createdAt)}</div>
                           </div>
-                        )}
+                          {alreadyRegistered ? (
+                            <span className="shrink-0 border-2 border-neon-green bg-neon-green/10 px-2 py-0.5 font-mono text-xs font-bold text-neon-green">BOUNTY EXISTS</span>
+                          ) : selectedIssues.has(idx) && (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <select value={issueSeverities[idx] ?? 1} onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))} className="border border-border bg-background px-1 py-0.5 font-mono text-sm">
+                                <option value={0}>LOW</option><option value={1}>MEDIUM</option><option value={2}>HIGH</option><option value={3}>CRITICAL</option>
+                              </select>
+                              <input type="number" step="0.001" min="0.001" placeholder="ETH" value={issueBountyAmounts[idx] || "0.001"} onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))} className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-sm" />
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
