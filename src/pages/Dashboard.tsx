@@ -132,7 +132,16 @@ type DashboardTab = "repos" | "bounties" | "my-issues" | "org";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtEth(wei: bigint): string {
-  return parseFloat(ethers.formatEther(wei)).toFixed(4);
+  const eth = Number(ethers.formatEther(wei));
+  if (!Number.isFinite(eth)) return "0";
+  if (eth === 0) return "0";
+  const decimals = eth < 0.001 ? 6 : 4;
+  return eth.toFixed(decimals).replace(/\.?0+$/, "");
+}
+function stakeForPercent(amount: bigint, percent: number): string {
+  const pct = BigInt(percent);
+  const wei = (amount * pct) / 100n;
+  return fmtEth(wei);
 }
 function timeSince(ts: bigint): string {
   const diff = Math.floor(Date.now() / 1000) - Number(ts);
@@ -172,7 +181,7 @@ export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { address, isConnected } = useWallet();
   const {
-    getAllBounties, getContributorBounties, getOrgRepos, getRepoBounties,
+    getAllBounties, getContributorBounties, getOrgRepos, getRepoBounties, getRepo,
     takeBounty, submitPR, claimBounty, claimExpiredBounty,
     approveMerge, rejectPR, cancelBounty, increaseBounty, fundRepo, withdrawRepoFunds,
   } = useContract();
@@ -217,6 +226,67 @@ export default function Dashboard() {
   // Shared tx state
   const [txStatus, setTxStatus] = useState("");
   const [txError, setTxError] = useState("");
+  const [analysisRepoId, setAnalysisRepoId] = useState<bigint | null>(null);
+  const [analysisRepoUrl, setAnalysisRepoUrl] = useState<string | null>(null);
+
+  const normalizeRepoUrl = useCallback((url?: string | null) => {
+    if (!url) return null;
+    const trimmed = url.trim();
+    if (!trimmed) return null;
+    return trimmed.startsWith("http") ? trimmed : `https://github.com/${trimmed}`;
+  }, []);
+
+  const resolveRepoUrl = useCallback(async (repoId: bigint) => {
+    const fromOrg = orgRepos.find((r) => r.id === repoId);
+    if (fromOrg?.repoUrl) return normalizeRepoUrl(fromOrg.repoUrl);
+    const fetched = await getRepo(Number(repoId));
+    return fetched?.repoUrl ? normalizeRepoUrl(fetched.repoUrl) : null;
+  }, [getRepo, normalizeRepoUrl, orgRepos]);
+
+  const resolveRepoIdForBounty = useCallback((bountyId: bigint) => {
+    const inAll = bounties.find((b) => b.id === bountyId);
+    if (inAll) return inAll.repoId;
+    const inMine = myBounties.find((b) => b.id === bountyId);
+    if (inMine) return inMine.repoId;
+    for (const list of Object.values(orgBounties)) {
+      const found = list.find((b) => b.id === bountyId);
+      if (found) return found.repoId;
+    }
+    return null;
+  }, [bounties, myBounties, orgBounties]);
+
+  const fireAudit = useCallback(async (
+    repoId: bigint | null,
+    action: string,
+    details?: Record<string, unknown>
+  ) => {
+    if (!repoId) return;
+    try {
+      const repoUrl = await resolveRepoUrl(repoId);
+      if (!repoUrl) return;
+      const rawBounties = await getRepoBounties(Number(repoId));
+      const bountiesSerialized = JSON.parse(
+        JSON.stringify(rawBounties, (_, v) => (typeof v === "bigint" ? v.toString() : v))
+      );
+      await fetch("/api/audit-repo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl,
+          bounties: bountiesSerialized,
+          event: {
+            name: "app_action",
+            action,
+            details,
+            source: "dashboard",
+            ts: new Date().toISOString(),
+          },
+        }),
+      });
+    } catch (err) {
+      console.warn("audit trigger failed:", err);
+    }
+  }, [getRepoBounties, resolveRepoUrl]);
 
   const setTab = (tab: DashboardTab) => {
     setActiveTab(tab);
@@ -261,6 +331,17 @@ export default function Dashboard() {
   useEffect(() => { if (activeTab === "my-issues" && isConnected) loadMyBounties(); }, [activeTab, isConnected, loadMyBounties]);
   useEffect(() => { if (activeTab === "org" && isConnected) loadOrgData(); }, [activeTab, isConnected, loadOrgData]);
 
+  useEffect(() => {
+    if (!selectedId) return;
+    const b = bounties.find((x) => x.id === selectedId);
+    if (!b) return;
+    const key = selectedId.toString();
+    setStakeInputs((prev) => {
+      if (prev[key]) return prev;
+      return { ...prev, [key]: stakeForPercent(b.amount, 15) };
+    });
+  }, [selectedId, bounties]);
+
   const openCount = bounties.filter((b) => b.status === 0).length;
 
   // ── Tx helper ───────────────────────────────────────────────────────────────
@@ -283,7 +364,13 @@ export default function Dashboard() {
     const min = amountWei / 10n, max = (amountWei * 2n) / 10n;
     if (stakeWei < min || stakeWei > max) { setTxError(`Stake must be ${fmtEth(min)}–${fmtEth(max)} ETH`); return; }
     setTakingId(bountyId);
-    await runTx("Taking bounty", () => takeBounty(Number(bountyId), stakeEth), async () => { await loadBounties(); await loadMyBounties(); setSelectedId(null); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Taking bounty", () => takeBounty(Number(bountyId), stakeEth), async () => {
+      await loadBounties();
+      await loadMyBounties();
+      setSelectedId(null);
+      await fireAudit(repoId, "take_bounty", { bountyId: bountyId.toString(), stakeEth });
+    });
     setTakingId(null);
   }
 
@@ -291,39 +378,69 @@ export default function Dashboard() {
     const url = prInputs[bountyId.toString()] || "";
     if (!url.startsWith("https://github.com/")) { setTxError("Enter a valid GitHub PR URL"); return; }
     setSubmittingPRId(bountyId);
-    await runTx("Submitting PR", () => submitPR(Number(bountyId), url), async () => { await loadMyBounties(); await loadBounties(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Submitting PR", () => submitPR(Number(bountyId), url), async () => {
+      await loadMyBounties();
+      await loadBounties();
+      await fireAudit(repoId, "submit_pr", { bountyId: bountyId.toString(), prUrl: url });
+    });
     setSubmittingPRId(null);
   }
 
   async function handleClaimBounty(bountyId: bigint) {
     setClaimingId(bountyId);
-    await runTx("Claiming bounty", () => claimBounty(Number(bountyId)), async () => { await loadMyBounties(); await loadBounties(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Claiming bounty", () => claimBounty(Number(bountyId)), async () => {
+      await loadMyBounties();
+      await loadBounties();
+      await fireAudit(repoId, "claim_bounty", { bountyId: bountyId.toString() });
+    });
     setClaimingId(null);
   }
 
   async function handleClaimExpired(bountyId: bigint) {
     setClaimExpiredId(bountyId);
-    await runTx("Claiming expired bounty", () => claimExpiredBounty(Number(bountyId)), async () => { await loadMyBounties(); await loadBounties(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Claiming expired bounty", () => claimExpiredBounty(Number(bountyId)), async () => {
+      await loadMyBounties();
+      await loadBounties();
+      await fireAudit(repoId, "claim_expired_bounty", { bountyId: bountyId.toString() });
+    });
     setClaimExpiredId(null);
   }
 
   // ── Org handlers ─────────────────────────────────────────────────────────────
   async function handleApproveMerge(bountyId: bigint) {
     setApprovingId(bountyId);
-    await runTx("Approving merge", () => approveMerge(Number(bountyId)), async () => { await loadBounties(); await loadOrgData(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Approving merge", () => approveMerge(Number(bountyId)), async () => {
+      await loadBounties();
+      await loadOrgData();
+      await fireAudit(repoId, "approve_merge", { bountyId: bountyId.toString() });
+    });
     setApprovingId(null);
   }
 
   async function handleRejectPR(bountyId: bigint) {
     setRejectingId(bountyId);
-    await runTx("Rejecting PR", () => rejectPR(Number(bountyId)), async () => { await loadBounties(); await loadOrgData(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Rejecting PR", () => rejectPR(Number(bountyId)), async () => {
+      await loadBounties();
+      await loadOrgData();
+      await fireAudit(repoId, "reject_pr", { bountyId: bountyId.toString() });
+    });
     setRejectingId(null);
   }
 
   async function handleCancelBounty(bountyId: bigint) {
     if (!confirm("Cancel this bounty? Remaining funds return to the repo pool.")) return;
     setCancellingId(bountyId);
-    await runTx("Cancelling bounty", () => cancelBounty(Number(bountyId)), async () => { await loadBounties(); await loadOrgData(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Cancelling bounty", () => cancelBounty(Number(bountyId)), async () => {
+      await loadBounties();
+      await loadOrgData();
+      await fireAudit(repoId, "cancel_bounty", { bountyId: bountyId.toString() });
+    });
     setCancellingId(null);
   }
 
@@ -331,7 +448,12 @@ export default function Dashboard() {
     const amt = increaseAmounts[bountyId.toString()] || "";
     if (!amt || parseFloat(amt) <= 0) { setTxError("Enter amount to add"); return; }
     setIncreasingId(bountyId);
-    await runTx("Increasing bounty", () => increaseBounty(Number(bountyId), amt), async () => { await loadBounties(); await loadOrgData(); });
+    const repoId = resolveRepoIdForBounty(bountyId);
+    await runTx("Increasing bounty", () => increaseBounty(Number(bountyId), amt), async () => {
+      await loadBounties();
+      await loadOrgData();
+      await fireAudit(repoId, "increase_bounty", { bountyId: bountyId.toString(), amountEth: amt });
+    });
     setIncreasingId(null);
   }
 
@@ -339,7 +461,10 @@ export default function Dashboard() {
     const amt = fundAmounts[repoId.toString()] || "";
     if (!amt || parseFloat(amt) <= 0) { setTxError("Enter amount to fund"); return; }
     setFundingRepoId(repoId);
-    await runTx("Funding repo", () => fundRepo(Number(repoId), amt), async () => { await loadOrgData(); });
+    await runTx("Funding repo", () => fundRepo(Number(repoId), amt), async () => {
+      await loadOrgData();
+      await fireAudit(repoId, "fund_repo", { amountEth: amt });
+    });
     setFundingRepoId(null);
   }
 
@@ -347,9 +472,13 @@ export default function Dashboard() {
     const amt = withdrawAmounts[repoId.toString()] || "";
     if (!amt || parseFloat(amt) <= 0) { setTxError("Enter amount to withdraw"); return; }
     setWithdrawingRepoId(repoId);
-    await runTx("Withdrawing funds", () => withdrawRepoFunds(Number(repoId), amt), async () => { await loadOrgData(); });
+    await runTx("Withdrawing funds", () => withdrawRepoFunds(Number(repoId), amt), async () => {
+      await loadOrgData();
+      await fireAudit(repoId, "withdraw_repo_funds", { amountEth: amt });
+    });
     setWithdrawingRepoId(null);
   }
+
 
   // ── Nav ─────────────────────────────────────────────────────────────────────
   const NAV_ITEMS: { id: DashboardTab; label: string; icon: React.ElementType; count?: number }[] = [
@@ -358,6 +487,16 @@ export default function Dashboard() {
     { id: "my-issues", label: "My Issues", icon: GitPullRequest },
     { id: "org", label: "Org Panel", icon: Building2, count: orgRepos.length || undefined },
   ];
+
+  const toggleAnalysis = (repo: OnChainRepo) => {
+    if (analysisRepoId === repo.id) {
+      setAnalysisRepoId(null);
+      setAnalysisRepoUrl(null);
+    } else {
+      setAnalysisRepoId(repo.id);
+      setAnalysisRepoUrl(repo.repoUrl || "");
+    }
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background bg-dot-grid">
@@ -587,6 +726,19 @@ export default function Dashboard() {
                               className="brutal-btn flex items-center gap-1.5 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold text-primary-foreground disabled:opacity-60">
                               {takingId === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />} APPLY FOR BOUNTY
                             </button>
+                          </div>
+                        )}
+                        {isOpen && isConnected && !isOwner && (
+                          <div className="flex flex-wrap gap-2">
+                            {[10, 15, 20].map((pct) => (
+                              <button
+                                key={pct}
+                                onClick={() => setStakeInputs((p) => ({ ...p, [key]: stakeForPercent(b.amount, pct) }))}
+                                className="border-2 border-border bg-background px-2 py-1 font-mono text-xs font-bold text-muted-foreground hover:border-neon-green hover:text-neon-green"
+                              >
+                                {pct}% ({stakeForPercent(b.amount, pct)} ETH)
+                              </button>
+                            ))}
                           </div>
                         )}
                         {isOpen && !isConnected && (
@@ -833,6 +985,30 @@ export default function Dashboard() {
                     {/* Repo Expanded */}
                     {isExpanded && (
                       <div className="border-t-2 border-border space-y-0">
+                        {/* Repo analysis */}
+                        <div className="p-4 border-b-2 border-border">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// repo analysis</div>
+                            <button
+                              onClick={() => toggleAnalysis(repo)}
+                              className="brutal-btn inline-flex items-center gap-2 border-neon-cyan bg-neon-cyan/10 px-3 py-2 font-mono text-sm font-bold text-neon-cyan"
+                            >
+                              {analysisRepoId === repo.id ? "Hide" : "ADD BOUNTY"}
+                            </button>
+                          </div>
+                          {analysisRepoId === repo.id && (
+                            <div className="mt-4">
+                              <AddRepoContent
+                                key={repo.id.toString()}
+                                embedded
+                                initialRepoUrl={analysisRepoUrl || repo.repoUrl}
+                                autoFetch
+                                hideRepoInput
+                              />
+                            </div>
+                          )}
+                        </div>
+
                         {/* Repo actions: Fund + Withdraw */}
                         <div className="grid gap-0 md:grid-cols-2 border-b-2 border-border">
                           <div className="p-4 border-b-2 md:border-b-0 md:border-r-2 border-border space-y-2">
