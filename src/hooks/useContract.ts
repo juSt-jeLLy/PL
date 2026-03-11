@@ -22,6 +22,7 @@ function getReadContract() {
 
 export function useContract() {
   const { signer, isConnected, isCorrectChain } = useWallet();
+  const DEFAULT_DEADLINE_SECONDS = 10 * 24 * 60 * 60;
 
   const getWriteContract = useCallback(() => {
     if (!signer) throw new Error("Wallet not connected");
@@ -36,7 +37,13 @@ export function useContract() {
     async (repoUrl: string, stakeEth: string) => {
       const contract = getWriteContract();
       const value = ethers.parseEther(stakeEth);
-      const tx = await contract.registerRepo(repoUrl, 0, 0, 0, { value });
+      const tx = await contract.registerRepo(
+        repoUrl,
+        DEFAULT_DEADLINE_SECONDS,
+        DEFAULT_DEADLINE_SECONDS,
+        DEFAULT_DEADLINE_SECONDS,
+        { value }
+      );
       const receipt = await tx.wait();
       const iface = new ethers.Interface(CONTRACT_ABI);
       for (const log of receipt.logs) {
@@ -173,6 +180,16 @@ export function useContract() {
     [getWriteContract]
   );
 
+  const updateRepoDeadlines = useCallback(
+    async (repoId: number, easySeconds: number, mediumSeconds: number, hardSeconds: number) => {
+      const contract = getWriteContract();
+      const tx = await contract.updateDeadlines(repoId, easySeconds, mediumSeconds, hardSeconds);
+      await tx.wait();
+      return tx.hash;
+    },
+    [getWriteContract]
+  );
+
   // ── Read functions ──────────────────────────────────────────────────────────
 
   const getRepoByUrl = useCallback(async (repoUrl: string): Promise<OnChainRepo | null> => {
@@ -271,6 +288,7 @@ export function useContract() {
     increaseBounty,
     fundRepo,
     withdrawRepoFunds,
+    updateRepoDeadlines,
     // reads
     getRepoByUrl,
     getRepo,
