@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Shield, ArrowLeft, Search, AlertTriangle, AlertCircle,
@@ -10,7 +10,7 @@ import WalletButton from "@/components/WalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OnChainRepo } from "@/lib/contract";
 
-const BACKEND = "http://localhost:3001";
+const BACKEND = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") || "";
 
 type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
@@ -48,30 +48,20 @@ interface AuditReport {
     findings: { type: string; suspicionScore: number; explanation: string; action: string }[];
   } | null;
   cid: string | null;
+  storage?: {
+    pieceCid?: string;
+    timestamp?: string;
+  } | null;
+  storageError?: string | null;
 }
 
 interface AuditLogEntry {
-  id: string;
+  pieceCid: string | null;
   repoUrl: string;
-  timestamp: string;
-  cid?: string | null;
-  stats?: {
-    totalIssues?: number;
-    mergedPRs?: number;
-    discrepanciesFound?: number;
-    critical?: number;
-    high?: number;
-    medium?: number;
-    low?: number;
-  };
-  discrepanciesCount?: number;
-  event?: {
-    name?: string | null;
-    action?: string | null;
-    source?: string | null;
-    ts?: string | null;
-    details?: Record<string, unknown> | null;
-  } | null;
+  timestamp: string | null;
+  auditId?: string | null;
+  dataSetId?: string;
+  providerName?: string;
 }
 
 const SEV_STYLE: Record<Severity, string> = {
@@ -131,6 +121,12 @@ export default function AuditPage() {
 
   const log = (msg: string) => setStatusLog(prev => [...prev, msg]);
 
+  const normalizeRepoKey = (value: string) => {
+    const trimmed = value.trim().replace(/\.git$/, "").replace(/\/$/, "");
+    const match = trimmed.match(/github\.com\/([^/]+\/[^/]+)/);
+    return match ? match[1] : trimmed;
+  };
+
   const normalizeRepoInput = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return "";
@@ -163,18 +159,15 @@ export default function AuditPage() {
     }
   }, [isConnected, address]);
 
-  async function fetchAuditLogs(overrideRepo?: string) {
-    const normalized = normalizeRepoInput(overrideRepo ?? repoUrl);
-    if (!normalized) {
-      setLogsError("Select a repo to load logs.");
-      setAuditLogs([]);
-      return;
-    }
-    setShowAllLogs(false);
+  async function loadAuditLogs(targetRepo?: string) {
+    const normalized = targetRepo ? normalizeRepoInput(targetRepo) : "";
     setLogsLoading(true);
     setLogsError(null);
     try {
-      const res = await fetch(`${BACKEND}/api/audit-logs?repoUrl=${encodeURIComponent(normalized)}&limit=50`);
+      const url = normalized
+        ? `${BACKEND}/api/audit-logs?repoUrl=${encodeURIComponent(normalized)}&limit=200`
+        : `${BACKEND}/api/audit-logs?limit=200`;
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load logs");
       setAuditLogs(Array.isArray(data.entries) ? data.entries : []);
@@ -184,6 +177,29 @@ export default function AuditPage() {
       setLogsLoading(false);
     }
   }
+
+  const repoOptions = useMemo(() => {
+    const unique = new Set<string>();
+    auditLogs.forEach((entry) => {
+      if (entry.repoUrl) unique.add(normalizeRepoKey(entry.repoUrl));
+    });
+    orgRepos.forEach((repo) => {
+      if (repo.repoUrl) unique.add(normalizeRepoKey(repo.repoUrl));
+    });
+    return Array.from(unique).sort();
+  }, [auditLogs, orgRepos]);
+
+  const filteredLogs = useMemo(() => {
+    const repoKey = normalizeRepoKey(repoUrl);
+    if (!repoKey) return auditLogs;
+    return auditLogs.filter((entry) => normalizeRepoKey(entry.repoUrl) === repoKey);
+  }, [auditLogs, repoUrl]);
+
+  const visibleLogs = showAllLogs ? filteredLogs : filteredLogs.slice(0, 5);
+
+  useEffect(() => {
+    void loadAuditLogs("");
+  }, []);
 
   async function runAudit() {
     const normalized = normalizeRepoInput(repoUrl);
@@ -196,7 +212,6 @@ export default function AuditPage() {
 
     try {
       log("Resolving repo on-chain...");
-      // Contract stores repos as "owner/repo" — extract from full URL if needed
       const urlTrimmed = normalized.replace(/\/$/, "");
       const ghMatch = urlTrimmed.match(/github\.com\/([^/]+\/[^/]+)/);
       const lookupKey = ghMatch ? ghMatch[1] : urlTrimmed;
@@ -207,7 +222,6 @@ export default function AuditPage() {
       const bounties = await getRepoBounties(repoData.id);
       log(`Found ${bounties.length} on-chain bounties. Fetching GitHub data...`);
 
-      // Convert BigInt values to strings for JSON serialization
       const serializedBounties = JSON.parse(
         JSON.stringify(bounties, (_, v) => (typeof v === "bigint" ? v.toString() : v))
       );
@@ -223,11 +237,11 @@ export default function AuditPage() {
 
       log(`Scanned ${data.stats.totalIssues} issues and ${data.stats.mergedPRs} merged PRs.`);
       log(`Found ${data.stats.discrepanciesFound} discrepancies. Running AI analysis...`);
-      if (data.cid) { setPinnedCid(data.cid); log(`Audit report pinned to Filecoin.`); }
-      else log("Pinata not configured — report not pinned.");
+      if (data.cid) { setPinnedCid(data.cid); log(`Audit report stored on Filecoin.`); }
+      else log("Filecoin storage failed — no Piece CID returned.");
 
       setReport(data);
-      await fetchAuditLogs(normalized);
+      await loadAuditLogs("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Audit failed");
     } finally {
@@ -271,180 +285,59 @@ export default function AuditPage() {
             <h1 className="font-display text-2xl font-extrabold uppercase">AI Audit</h1>
           </div>
           <p className="font-mono text-sm text-muted-foreground">
-            Cross-references GitHub state vs on-chain contract state to detect discrepancies. Audit reports are pinned to Filecoin as immutable proof.
+            Cross-references GitHub state vs on-chain contract state to detect discrepancies. Audit reports are stored on Filecoin as immutable proof.
           </p>
         </div>
 
         {/* Input */}
         <div className="brutal-card p-4 space-y-3">
-          <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// your registered repos</div>
-          {!isConnected && (
-            <div className="flex items-center gap-3">
-              <p className="font-mono text-sm text-neon-amber">Connect wallet to load repos.</p>
+          <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// repo to audit</div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repo"
+              value={repoUrl}
+              onChange={e => setRepoUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !loading && runAudit()}
+              className="flex-1 border-2 border-border bg-background px-3 py-2 font-mono text-sm focus:border-neon-cyan focus:outline-none"
+            />
+            {!isConnected ? (
               <WalletButton />
-            </div>
-          )}
-          {isConnected && (
-            <>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={loadOrgRepos}
-                  disabled={orgLoading}
-                  className="brutal-btn flex items-center gap-2 border-neon-green bg-neon-green/10 px-3 py-2 font-mono text-sm font-bold text-neon-green disabled:opacity-60"
-                >
-                  {orgLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {orgLoading ? "Refreshing..." : "Refresh Repos"}
-                </button>
-              </div>
-              {orgError && (
-                <div className="border-2 border-neon-red bg-neon-red/10 p-2 font-mono text-sm text-neon-red">
-                  {orgError}
-                </div>
-              )}
-              {orgRepos.length === 0 && !orgLoading && (
-                <div className="font-mono text-sm text-muted-foreground">No registered repos yet.</div>
-              )}
-              <div className="space-y-2">
-                {orgRepos.map((repo) => {
-                  const repoKey = repo.id.toString();
-                  const label = repo.repoUrl || `Repo #${repoKey}`;
-                  const isSelected = normalizeRepoInput(repo.repoUrl) === normalizeRepoInput(repoUrl);
-                  return (
-                    <div
-                      key={repoKey}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        const normalized = normalizeRepoInput(repo.repoUrl);
-                        setRepoUrl(normalized);
-                        setReport(null);
-                        setPinnedCid(null);
-                        setStatusLog([]);
-                        setShowAllLogs(false);
-                        void fetchAuditLogs(normalized);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          const normalized = normalizeRepoInput(repo.repoUrl);
-                          setRepoUrl(normalized);
-                          setReport(null);
-                          setPinnedCid(null);
-                          setStatusLog([]);
-                          setShowAllLogs(false);
-                          void fetchAuditLogs(normalized);
-                        }
-                      }}
-                      className={`border-2 p-3 cursor-pointer transition-colors ${isSelected ? "border-neon-cyan bg-neon-cyan/10" : "border-border bg-background hover:border-neon-cyan/60"}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-mono text-sm font-bold text-muted-foreground">REPO #{repoKey}</div>
-                          <div className="font-display text-lg font-extrabold uppercase truncate">{label}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-mono text-sm text-muted-foreground">Available</div>
-                          <div className="font-mono text-sm font-bold text-neon-green">{formatEth(repo.available)} ETH</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        {repoUrl.trim() && (
-          <div className="brutal-card p-4 space-y-3">
-            <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// selected repo</div>
-            <div className="font-mono text-sm text-foreground break-all">{normalizeRepoInput(repoUrl)}</div>
-            <div className="flex gap-2">
+            ) : (
               <button
                 onClick={runAudit}
-                disabled={loading}
+                disabled={loading || !repoUrl.trim()}
                 className="brutal-btn flex items-center gap-2 border-neon-cyan bg-neon-cyan px-4 py-2 font-mono text-sm font-bold text-primary-foreground disabled:opacity-60"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {loading ? "Auditing..." : "Run Audit"}
               </button>
-              <button
-                onClick={fetchAuditLogs}
-                disabled={logsLoading}
-                className="brutal-btn flex items-center gap-2 border-neon-amber bg-neon-amber/10 px-4 py-2 font-mono text-sm font-bold text-neon-amber disabled:opacity-60"
-              >
-                {logsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {logsLoading ? "Loading..." : "Load Logs"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Audit log panel */}
-        <div className="border-2 border-border bg-card p-4">
-          <div className="mb-2 font-mono text-sm uppercase tracking-wider text-muted-foreground">// audit history</div>
-          {logsError && (
-            <div className="mb-3 border-2 border-neon-red bg-neon-red/10 p-2 font-mono text-sm text-neon-red">
-              {logsError}
-            </div>
-          )}
-          {auditLogs.length === 0 && !logsLoading && (
-            <div className="font-mono text-sm text-muted-foreground">No audit logs yet for this repo.</div>
-          )}
-          <div className="space-y-2">
-            {(() => {
-              const ordered = [...auditLogs].reverse();
-              const visible = showAllLogs ? ordered : ordered.slice(0, 5);
-              return visible.map((entry) => {
-                const action = entry.event?.action || "audit";
-                const source = entry.event?.source || "app";
-                const discrepancies =
-                  typeof entry.stats?.discrepanciesFound === "number"
-                    ? entry.stats.discrepanciesFound
-                    : (entry.discrepanciesCount ?? 0);
-                return (
-                <div key={entry.id} className="border-2 border-border bg-background p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-mono text-sm font-bold uppercase">
-                      {action}
-                      <span className="text-muted-foreground"> · {source}</span>
-                    </div>
-                    <div className="font-mono text-sm text-muted-foreground">
-                      {new Date(entry.timestamp).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-sm text-muted-foreground">
-                    <span>{discrepancies} discrepancies</span>
-                    {entry.cid && (
-                      <a
-                        href={`https://gateway.pinata.cloud/ipfs/${entry.cid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-neon-amber hover:underline"
-                      >
-                        CID <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-                );
-              });
-            })()}
-            {logsLoading && (
-              <div className="flex items-center gap-2 font-mono text-sm text-neon-cyan">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading logs...
-              </div>
-            )}
-            {!logsLoading && auditLogs.length > 5 && (
-              <button
-                onClick={() => setShowAllLogs((v) => !v)}
-                className="mt-2 border-2 border-border bg-background px-2 py-1 font-mono text-xs font-bold text-muted-foreground hover:border-neon-cyan hover:text-neon-cyan"
-              >
-                {showAllLogs ? "Show last 5" : `Show all (${auditLogs.length})`}
-              </button>
             )}
           </div>
+          {!isConnected && (
+            <p className="font-mono text-sm text-neon-amber">Connect wallet to fetch on-chain bounty data.</p>
+          )}
+          {orgError && (
+            <div className="font-mono text-xs text-neon-red">{orgError}</div>
+          )}
+          {orgLoading && (
+            <div className="font-mono text-xs text-neon-cyan">Loading org repos...</div>
+          )}
+          {repoOptions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="font-mono text-xs font-bold uppercase text-muted-foreground">Repo selector</label>
+              <select
+                value={normalizeRepoKey(repoUrl)}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                className="border-2 border-border bg-background px-2 py-1 font-mono text-xs"
+              >
+                <option value="">All repos</option>
+                {repoOptions.map((repo) => (
+                  <option key={repo} value={repo}>{repo}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Status log */}
@@ -461,17 +354,7 @@ export default function AuditPage() {
               {pinnedCid && (
                 <div className="flex gap-3 font-mono text-sm text-neon-amber">
                   <span className="shrink-0">›</span>
-                  <span>
-                    CID:{" "}
-                    <a
-                      href={`https://gateway.pinata.cloud/ipfs/${pinnedCid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline hover:text-foreground break-all"
-                    >
-                      {pinnedCid}
-                    </a>
-                  </span>
+                  <span>Piece CID: {pinnedCid}</span>
                 </div>
               )}
               {loading && (
@@ -483,6 +366,48 @@ export default function AuditPage() {
             </div>
           </div>
         )}
+
+        {/* Audit logs */}
+        <div className="border-2 border-border bg-card p-4">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="font-mono text-sm uppercase tracking-wider text-muted-foreground">// audit_logs</div>
+            <button
+              onClick={() => loadAuditLogs("")}
+              className="brutal-btn border-neon-cyan bg-neon-cyan px-3 py-1 text-xs font-mono font-bold text-primary-foreground"
+              disabled={logsLoading}
+            >
+              {logsLoading ? "Loading..." : "Refresh Logs"}
+            </button>
+          </div>
+          {logsError && (
+            <div className="mb-2 font-mono text-xs text-neon-red">{logsError}</div>
+          )}
+          {filteredLogs.length === 0 && !logsLoading && (
+            <div className="font-mono text-xs text-muted-foreground">No audit logs found for this repo.</div>
+          )}
+          {visibleLogs.length > 0 && (
+            <div className="max-h-56 space-y-2 overflow-auto">
+              {visibleLogs.map((entry, idx) => (
+                <div key={`${entry.pieceCid || idx}`} className="border border-border/60 p-2 font-mono text-xs">
+                  <div className="text-muted-foreground">{entry.timestamp || "—"}</div>
+                  <div className="break-all">Piece CID: {entry.pieceCid || "—"}</div>
+                  <div className="text-muted-foreground">Repo: {entry.repoUrl || "—"}</div>
+                  {entry.providerName && (
+                    <div className="text-muted-foreground">Provider: {entry.providerName}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!logsLoading && filteredLogs.length > 5 && (
+            <button
+              onClick={() => setShowAllLogs((v) => !v)}
+              className="mt-2 border-2 border-border bg-background px-2 py-1 font-mono text-xs font-bold text-muted-foreground hover:border-neon-cyan hover:text-neon-cyan"
+            >
+              {showAllLogs ? "Show last 5" : `Show all (${filteredLogs.length})`}
+            </button>
+          )}
+        </div>
 
         {/* Error */}
         {error && (
@@ -612,35 +537,20 @@ export default function AuditPage() {
               <div className="flex items-center gap-2">
                 <RefreshCw className={`h-4 w-4 ${report.cid ? "text-neon-amber" : "text-muted-foreground"}`} />
                 <span className={`font-mono text-sm font-bold uppercase ${report.cid ? "text-neon-amber" : "text-muted-foreground"}`}>
-                  Filecoin Proof
+                  Filecoin Storage
                 </span>
               </div>
               {report.cid ? (
                 <>
                   <div className="font-mono text-sm break-all text-foreground">{report.cid}</div>
-                  <div className="flex flex-wrap gap-3">
-                    <a
-                      href={`https://gateway.pinata.cloud/ipfs/${report.cid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-sm text-neon-amber hover:underline"
-                    >
-                      View on Pinata <ExternalLink className="h-3 w-3" />
-                    </a>
-                    <a
-                      href={`https://ipfs.io/ipfs/${report.cid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-sm text-muted-foreground hover:underline"
-                    >
-                      View on IPFS <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </div>
-                  <p className="font-mono text-sm text-muted-foreground">This audit report is permanently pinned. Use this CID as evidence in any dispute.</p>
+                  <p className="font-mono text-sm text-muted-foreground">
+                    This audit report is stored on Filecoin. Use the Piece CID as evidence in any dispute.
+                  </p>
                 </>
               ) : (
                 <p className="font-mono text-sm text-muted-foreground">
-                  Add <code className="bg-surface-3 px-1">PINATA_JWT</code> to backend .env to enable Filecoin pinning.
+                  Filecoin storage failed — check <code className="bg-surface-3 px-1">FILECOIN_PRIVATE_KEY</code> and
+                  <code className="bg-surface-3 px-1">FILECOIN_RPC_URL</code> in the backend .env.
                 </p>
               )}
             </div>
