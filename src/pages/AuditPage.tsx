@@ -60,6 +60,7 @@ interface AuditLogEntry {
   repoUrl: string;
   timestamp: string | null;
   auditId?: string | null;
+  legacy?: boolean;
   dataSetId?: string;
   providerName?: string;
 }
@@ -118,6 +119,9 @@ export default function AuditPage() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [contentByCid, setContentByCid] = useState<Record<string, string>>({});
+  const [contentErrors, setContentErrors] = useState<Record<string, string>>({});
+  const [contentLoading, setContentLoading] = useState<Record<string, boolean>>({});
 
   const log = (msg: string) => setStatusLog(prev => [...prev, msg]);
 
@@ -176,6 +180,45 @@ export default function AuditPage() {
     } finally {
       setLogsLoading(false);
     }
+  }
+
+  async function viewAuditContent(pieceCid: string | null) {
+    if (!pieceCid) return;
+    if (contentByCid[pieceCid]) {
+      setContentByCid(prev => {
+        const next = { ...prev };
+        delete next[pieceCid];
+        return next;
+      });
+      return;
+    }
+    setContentLoading(prev => ({ ...prev, [pieceCid]: true }));
+    setContentErrors(prev => {
+      const next = { ...prev };
+      delete next[pieceCid];
+      return next;
+    });
+    try {
+      const res = await fetch(`${BACKEND}/api/audit-content?pieceCid=${encodeURIComponent(pieceCid)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load audit content");
+      if (data.content) {
+        let formatted = data.content;
+        try {
+          formatted = JSON.stringify(JSON.parse(data.content), null, 2);
+        } catch { /* keep raw */ }
+        setContentByCid(prev => ({ ...prev, [pieceCid]: formatted }));
+      }
+    } catch (err) {
+      setContentErrors(prev => ({ ...prev, [pieceCid]: err instanceof Error ? err.message : "Failed to load content" }));
+    } finally {
+      setContentLoading(prev => ({ ...prev, [pieceCid]: false }));
+    }
+  }
+
+  function downloadAudit(pieceCid: string | null) {
+    if (!pieceCid) return;
+    window.open(`${BACKEND}/api/audit-download?pieceCid=${encodeURIComponent(pieceCid)}`, "_blank", "noopener,noreferrer");
   }
 
   const repoOptions = useMemo(() => {
@@ -392,8 +435,36 @@ export default function AuditPage() {
                   <div className="text-muted-foreground">{entry.timestamp || "—"}</div>
                   <div className="break-all">Piece CID: {entry.pieceCid || "—"}</div>
                   <div className="text-muted-foreground">Repo: {entry.repoUrl || "—"}</div>
+                  {!entry.pieceCid && entry.auditId && (
+                    <div className="text-muted-foreground">Audit ID: {entry.auditId}</div>
+                  )}
+                  {!entry.pieceCid && entry.legacy && (
+                    <div className="text-muted-foreground">Legacy log (CID not stored)</div>
+                  )}
                   {entry.providerName && (
                     <div className="text-muted-foreground">Provider: {entry.providerName}</div>
+                  )}
+                  {entry.pieceCid && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => viewAuditContent(entry.pieceCid)}
+                        className="inline-flex items-center gap-1 border border-border/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-neon-cyan hover:text-neon-cyan"
+                      >
+                        {contentLoading[entry.pieceCid] ? "Loading..." : contentByCid[entry.pieceCid] ? "Hide view" : "View"}
+                      </button>
+                      <button
+                        onClick={() => downloadAudit(entry.pieceCid)}
+                        className="inline-flex items-center gap-1 border border-border/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-neon-cyan hover:text-neon-cyan"
+                      >
+                        Download
+                      </button>
+                    </div>
+                  )}
+                  {entry.pieceCid && contentErrors[entry.pieceCid] && (
+                    <div className="mt-1 text-neon-red">{contentErrors[entry.pieceCid]}</div>
+                  )}
+                  {entry.pieceCid && contentByCid[entry.pieceCid] && (
+                    <pre className="mt-2 max-h-64 overflow-auto border border-border/60 bg-background p-2 text-[11px] text-foreground"><code>{contentByCid[entry.pieceCid]}</code></pre>
                   )}
                 </div>
               ))}
