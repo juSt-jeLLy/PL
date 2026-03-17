@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Shield, ArrowLeft, Search, AlertTriangle, AlertCircle,
@@ -8,7 +8,6 @@ import { useWallet } from "@/context/WalletContext";
 import { useContract } from "@/hooks/useContract";
 import WalletButton from "@/components/WalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { OnChainRepo } from "@/lib/contract";
 
 const BACKEND = "http://localhost:3001";
 
@@ -50,30 +49,6 @@ interface AuditReport {
   cid: string | null;
 }
 
-interface AuditLogEntry {
-  id: string;
-  repoUrl: string;
-  timestamp: string;
-  cid?: string | null;
-  stats?: {
-    totalIssues?: number;
-    mergedPRs?: number;
-    discrepanciesFound?: number;
-    critical?: number;
-    high?: number;
-    medium?: number;
-    low?: number;
-  };
-  discrepanciesCount?: number;
-  event?: {
-    name?: string | null;
-    action?: string | null;
-    source?: string | null;
-    ts?: string | null;
-    details?: Record<string, unknown> | null;
-  } | null;
-}
-
 const SEV_STYLE: Record<Severity, string> = {
   CRITICAL: "border-neon-red bg-neon-red/10 text-neon-red",
   HIGH: "border-neon-amber bg-neon-amber/10 text-neon-amber",
@@ -102,92 +77,21 @@ const TYPE_LABEL: Record<string, string> = {
   UNREGISTERED_OPEN_ISSUE: "Unregistered Open Issue",
 };
 
-const formatEth = (value?: bigint) => {
-  if (!value) return "0";
-  const raw = value.toString();
-  const padded = raw.padStart(19, "0");
-  const whole = padded.slice(0, -18);
-  const frac = padded.slice(-18, -14);
-  return `${whole}.${frac}`;
-};
-
 export default function AuditPage() {
-  const { address, isConnected } = useWallet();
-  const { getRepoByUrl, getRepoBounties, getOrgRepos } = useContract();
+  const { isConnected } = useWallet();
+  const { getRepoByUrl, getRepoBounties } = useContract();
 
   const [repoUrl, setRepoUrl] = useState("");
-  const [orgRepos, setOrgRepos] = useState<OnChainRepo[]>([]);
-  const [orgLoading, setOrgLoading] = useState(false);
-  const [orgError, setOrgError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<AuditReport | null>(null);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [pinnedCid, setPinnedCid] = useState<string | null>(null);
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [logsError, setLogsError] = useState<string | null>(null);
-  const [showAllLogs, setShowAllLogs] = useState(false);
 
   const log = (msg: string) => setStatusLog(prev => [...prev, msg]);
 
-  const normalizeRepoInput = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    return trimmed.startsWith("http") ? trimmed : `https://github.com/${trimmed}`;
-  };
-
-  const loadOrgRepos = async () => {
-    if (!address) return;
-    setOrgLoading(true);
-    setOrgError(null);
-    try {
-      const repos = await getOrgRepos(address);
-      setOrgRepos(repos);
-      if (!repoUrl.trim() && repos.length > 0) {
-        setRepoUrl(normalizeRepoInput(repos[0].repoUrl));
-      }
-    } catch (err) {
-      setOrgError(err instanceof Error ? err.message : "Failed to load repos");
-      setOrgRepos([]);
-    } finally {
-      setOrgLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isConnected && address) {
-      void loadOrgRepos();
-    } else {
-      setOrgRepos([]);
-    }
-  }, [isConnected, address]);
-
-  async function fetchAuditLogs(overrideRepo?: string) {
-    const normalized = normalizeRepoInput(overrideRepo ?? repoUrl);
-    if (!normalized) {
-      setLogsError("Select a repo to load logs.");
-      setAuditLogs([]);
-      return;
-    }
-    setShowAllLogs(false);
-    setLogsLoading(true);
-    setLogsError(null);
-    try {
-      const res = await fetch(`${BACKEND}/api/audit-logs?repoUrl=${encodeURIComponent(normalized)}&limit=50`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load logs");
-      setAuditLogs(Array.isArray(data.entries) ? data.entries : []);
-    } catch (err) {
-      setLogsError(err instanceof Error ? err.message : "Failed to load logs");
-    } finally {
-      setLogsLoading(false);
-    }
-  }
-
   async function runAudit() {
-    const normalized = normalizeRepoInput(repoUrl);
-    if (!normalized) return;
+    if (!repoUrl.trim()) return;
     setLoading(true);
     setError(null);
     setReport(null);
@@ -197,7 +101,7 @@ export default function AuditPage() {
     try {
       log("Resolving repo on-chain...");
       // Contract stores repos as "owner/repo" — extract from full URL if needed
-      const urlTrimmed = normalized.replace(/\/$/, "");
+      const urlTrimmed = repoUrl.trim().replace(/\/$/, "");
       const ghMatch = urlTrimmed.match(/github\.com\/([^/]+\/[^/]+)/);
       const lookupKey = ghMatch ? ghMatch[1] : urlTrimmed;
       const repoData = await getRepoByUrl(lookupKey);
@@ -215,7 +119,7 @@ export default function AuditPage() {
       const res = await fetch(`${BACKEND}/api/audit-repo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl: normalized, bounties: serializedBounties }),
+        body: JSON.stringify({ repoUrl: repoUrl.trim(), bounties: serializedBounties }),
       });
 
       const data = await res.json();
@@ -227,7 +131,6 @@ export default function AuditPage() {
       else log("Pinata not configured — report not pinned.");
 
       setReport(data);
-      await fetchAuditLogs(normalized);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Audit failed");
     } finally {
@@ -277,174 +180,32 @@ export default function AuditPage() {
 
         {/* Input */}
         <div className="brutal-card p-4 space-y-3">
-          <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// your registered repos</div>
-          {!isConnected && (
-            <div className="flex items-center gap-3">
-              <p className="font-mono text-sm text-neon-amber">Connect wallet to load repos.</p>
+          <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// repo to audit</div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repo"
+              value={repoUrl}
+              onChange={e => setRepoUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !loading && runAudit()}
+              className="flex-1 border-2 border-border bg-background px-3 py-2 font-mono text-sm focus:border-neon-cyan focus:outline-none"
+            />
+            {!isConnected ? (
               <WalletButton />
-            </div>
-          )}
-          {isConnected && (
-            <>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={loadOrgRepos}
-                  disabled={orgLoading}
-                  className="brutal-btn flex items-center gap-2 border-neon-green bg-neon-green/10 px-3 py-2 font-mono text-sm font-bold text-neon-green disabled:opacity-60"
-                >
-                  {orgLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {orgLoading ? "Refreshing..." : "Refresh Repos"}
-                </button>
-              </div>
-              {orgError && (
-                <div className="border-2 border-neon-red bg-neon-red/10 p-2 font-mono text-sm text-neon-red">
-                  {orgError}
-                </div>
-              )}
-              {orgRepos.length === 0 && !orgLoading && (
-                <div className="font-mono text-sm text-muted-foreground">No registered repos yet.</div>
-              )}
-              <div className="space-y-2">
-                {orgRepos.map((repo) => {
-                  const repoKey = repo.id.toString();
-                  const label = repo.repoUrl || `Repo #${repoKey}`;
-                  const isSelected = normalizeRepoInput(repo.repoUrl) === normalizeRepoInput(repoUrl);
-                  return (
-                    <div
-                      key={repoKey}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        const normalized = normalizeRepoInput(repo.repoUrl);
-                        setRepoUrl(normalized);
-                        setReport(null);
-                        setPinnedCid(null);
-                        setStatusLog([]);
-                        setShowAllLogs(false);
-                        void fetchAuditLogs(normalized);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          const normalized = normalizeRepoInput(repo.repoUrl);
-                          setRepoUrl(normalized);
-                          setReport(null);
-                          setPinnedCid(null);
-                          setStatusLog([]);
-                          setShowAllLogs(false);
-                          void fetchAuditLogs(normalized);
-                        }
-                      }}
-                      className={`border-2 p-3 cursor-pointer transition-colors ${isSelected ? "border-neon-cyan bg-neon-cyan/10" : "border-border bg-background hover:border-neon-cyan/60"}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-mono text-sm font-bold text-muted-foreground">REPO #{repoKey}</div>
-                          <div className="font-display text-lg font-extrabold uppercase truncate">{label}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-mono text-sm text-muted-foreground">Available</div>
-                          <div className="font-mono text-sm font-bold text-neon-green">{formatEth(repo.available)} ETH</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        {repoUrl.trim() && (
-          <div className="brutal-card p-4 space-y-3">
-            <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// selected repo</div>
-            <div className="font-mono text-sm text-foreground break-all">{normalizeRepoInput(repoUrl)}</div>
-            <div className="flex gap-2">
+            ) : (
               <button
                 onClick={runAudit}
-                disabled={loading}
+                disabled={loading || !repoUrl.trim()}
                 className="brutal-btn flex items-center gap-2 border-neon-cyan bg-neon-cyan px-4 py-2 font-mono text-sm font-bold text-primary-foreground disabled:opacity-60"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {loading ? "Auditing..." : "Run Audit"}
               </button>
-              <button
-                onClick={fetchAuditLogs}
-                disabled={logsLoading}
-                className="brutal-btn flex items-center gap-2 border-neon-amber bg-neon-amber/10 px-4 py-2 font-mono text-sm font-bold text-neon-amber disabled:opacity-60"
-              >
-                {logsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {logsLoading ? "Loading..." : "Load Logs"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Audit log panel */}
-        <div className="border-2 border-border bg-card p-4">
-          <div className="mb-2 font-mono text-sm uppercase tracking-wider text-muted-foreground">// audit history</div>
-          {logsError && (
-            <div className="mb-3 border-2 border-neon-red bg-neon-red/10 p-2 font-mono text-sm text-neon-red">
-              {logsError}
-            </div>
-          )}
-          {auditLogs.length === 0 && !logsLoading && (
-            <div className="font-mono text-sm text-muted-foreground">No audit logs yet for this repo.</div>
-          )}
-          <div className="space-y-2">
-            {(() => {
-              const ordered = [...auditLogs].reverse();
-              const visible = showAllLogs ? ordered : ordered.slice(0, 5);
-              return visible.map((entry) => {
-                const action = entry.event?.action || "audit";
-                const source = entry.event?.source || "app";
-                const discrepancies =
-                  typeof entry.stats?.discrepanciesFound === "number"
-                    ? entry.stats.discrepanciesFound
-                    : (entry.discrepanciesCount ?? 0);
-                return (
-                <div key={entry.id} className="border-2 border-border bg-background p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-mono text-sm font-bold uppercase">
-                      {action}
-                      <span className="text-muted-foreground"> · {source}</span>
-                    </div>
-                    <div className="font-mono text-sm text-muted-foreground">
-                      {new Date(entry.timestamp).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-sm text-muted-foreground">
-                    <span>{discrepancies} discrepancies</span>
-                    {entry.cid && (
-                      <a
-                        href={`https://gateway.pinata.cloud/ipfs/${entry.cid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-neon-amber hover:underline"
-                      >
-                        CID <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-                );
-              });
-            })()}
-            {logsLoading && (
-              <div className="flex items-center gap-2 font-mono text-sm text-neon-cyan">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading logs...
-              </div>
-            )}
-            {!logsLoading && auditLogs.length > 5 && (
-              <button
-                onClick={() => setShowAllLogs((v) => !v)}
-                className="mt-2 border-2 border-border bg-background px-2 py-1 font-mono text-xs font-bold text-muted-foreground hover:border-neon-cyan hover:text-neon-cyan"
-              >
-                {showAllLogs ? "Show last 5" : `Show all (${auditLogs.length})`}
-              </button>
             )}
           </div>
+          {!isConnected && (
+            <p className="font-mono text-sm text-neon-amber">Connect wallet to fetch on-chain bounty data.</p>
+          )}
         </div>
 
         {/* Status log */}
