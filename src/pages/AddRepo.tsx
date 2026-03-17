@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Loader2, Shield, AlertTriangle, ChevronDown, ChevronRight, Bug, Lock, Zap, Eye, Code, TestTube, Layers, BookOpen, AlertCircle, CheckCircle, Wallet, GitBranch, Plus } from "lucide-react";
+import { ethers } from "ethers";
 import { useWallet } from "@/context/WalletContext";
 import { useContract } from "@/hooks/useContract";
 import { SEVERITY_TO_NUM } from "@/lib/contract";
@@ -87,6 +88,7 @@ type SecurityFinding = {
   line: string | null;
   description: string;
   suggestion: string;
+  bountyEth?: string;
 };
 
 type CodeSuggestion = {
@@ -97,6 +99,7 @@ type CodeSuggestion = {
   title: string;
   description: string;
   example?: string;
+  bountyEth?: string;
 };
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -122,6 +125,14 @@ function chunkCode(content: string, filePath: string, chunkSize = 250) {
   return chunks;
 }
 
+function formatEthValue(wei: bigint): string {
+  const eth = Number(ethers.formatEther(wei));
+  if (!Number.isFinite(eth)) return "0";
+  if (eth === 0) return "0";
+  const decimals = eth < 0.001 ? 6 : 4;
+  return eth.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
 async function fetchFileContent(owner: string, repo: string, path: string) {
   const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`);
   if (!res.ok) return null;
@@ -130,8 +141,8 @@ async function fetchFileContent(owner: string, repo: string, path: string) {
   return null;
 }
 
-async function analyzeChunkWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }): Promise<SecurityFinding[]> {
-  const prompt = `You are a senior code security analyst. Analyze code from "${chunk.filePath}" (chunk ${chunk.chunkIndex + 1}/${chunk.total}).\n\nReturn ONLY valid JSON array:\n[\n  {\n    "severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO",\n    "type": "vulnerability type",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "description": "description",\n    "suggestion": "fix"\n  }\n]\nIf no issues: []\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
+async function analyzeChunkWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }, repoValueEth: string): Promise<SecurityFinding[]> {
+  const prompt = `You are a senior code security analyst. Analyze code from "${chunk.filePath}" (chunk ${chunk.chunkIndex + 1}/${chunk.total}).\nRepository total funded value: ${repoValueEth} ETH.\n\nReturn ONLY valid JSON array:\n[\n  {\n    "severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO",\n    "type": "vulnerability type",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "description": "description",\n    "suggestion": "fix",\n    "bountyEth": "suggested bounty amount in ETH"\n  }\n]\nIf no issues: []\n\nGuidance for bountyEth:\n- Base = repoValueEth / 100 (approx)\n- HIGH/MEDIUM can be ~2-3x base\n- CRITICAL can be 5-10x base\n- Return a numeric string in ETH (up to 6 decimals)\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
 
   const response = await fetch(`${BACKEND_URL}/api/analyze`, {
     method: "POST",
@@ -143,8 +154,8 @@ async function analyzeChunkWithAI(chunk: { filePath: string; content: string; ch
   try { return JSON.parse(text.replace(/```json|```/g, "").trim()); } catch { return []; }
 }
 
-async function suggestImprovementsWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }): Promise<CodeSuggestion[]> {
-  const prompt = `You are a senior software engineer. Suggest improvements for code from "${chunk.filePath}".\n\nReturn ONLY valid JSON array:\n[\n  {\n    "category": "Architecture|Readability|Edge Case|Better Approach|Testing",\n    "priority": "HIGH|MEDIUM|LOW",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "title": "short title",\n    "description": "explanation",\n    "example": "optional code snippet"\n  }\n]\nIf none: []\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
+async function suggestImprovementsWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }, repoValueEth: string): Promise<CodeSuggestion[]> {
+  const prompt = `You are a senior software engineer. Suggest improvements for code from "${chunk.filePath}".\nRepository total funded value: ${repoValueEth} ETH.\n\nReturn ONLY valid JSON array:\n[\n  {\n    "category": "Architecture|Readability|Edge Case|Better Approach|Testing",\n    "priority": "HIGH|MEDIUM|LOW",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "title": "short title",\n    "description": "explanation",\n    "example": "optional code snippet",\n    "bountyEth": "suggested bounty amount in ETH"\n  }\n]\nIf none: []\n\nGuidance for bountyEth:\n- Base = repoValueEth / 100 (approx)\n- HIGH priority can be 5-10x base for critical impact\n- MEDIUM can be ~2-3x base; LOW near base\n- Return a numeric string in ETH (up to 6 decimals)\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
 
   const response = await fetch(`${BACKEND_URL}/api/analyze`, {
     method: "POST",
@@ -180,15 +191,40 @@ function aiSeverityToContractSeverity(sev: string): number {
   return SEVERITY_TO_NUM[sev === "INFO" ? "LOW" : sev] ?? 0;
 }
 
+function priorityToContractSeverity(priority: string): number {
+  if (priority === "HIGH") return SEVERITY_TO_NUM.CRITICAL;
+  if (priority === "MEDIUM") return SEVERITY_TO_NUM.HIGH;
+  return SEVERITY_TO_NUM.MEDIUM;
+}
+
+function normalizeBounty(value?: string): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const num = Number(trimmed);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return trimmed;
+}
+
 export default function AddRepo() {
   return <AddRepoContent />;
 }
 
-export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
+export function AddRepoContent({
+  embedded = false,
+  initialRepoUrl,
+  autoFetch = false,
+  hideRepoInput = false,
+}: {
+  embedded?: boolean;
+  initialRepoUrl?: string | null;
+  autoFetch?: boolean;
+  hideRepoInput?: boolean;
+}) {
   const { isConnected } = useWallet();
   const { registerRepo, batchCreateBounties, getRepoByUrl, getRepoBounties } = useContract();
 
-  const [repoUrl, setRepoUrl] = useState("");
+  const [repoUrl, setRepoUrl] = useState(initialRepoUrl || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -197,7 +233,8 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   // ── On-chain registration ─────────────────────────────────────────────────
   const [registeredRepoId, setRegisteredRepoId] = useState<number | null>(null);
   const [existingRepoId, setExistingRepoId] = useState<number | null>(null);
-  const [stakeEth, setStakeEth] = useState("0.001");
+  const [repoValueEth, setRepoValueEth] = useState<string | null>(null);
+  const [stakeEth, setStakeEth] = useState("0.01");
   const [isRegistering, setIsRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
@@ -228,17 +265,22 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
   const [isCreatingSuggestionIssues, setIsCreatingSuggestionIssues] = useState(false);
   const [createdSuggestionIssues, setCreatedSuggestionIssues] = useState<Array<{ number?: number; url?: string; title?: string; error?: string; type?: string }>>([]);
+  const [findingBountyAmounts, setFindingBountyAmounts] = useState<Record<number, string>>({});
+  const [suggestionBountyAmounts, setSuggestionBountyAmounts] = useState<Record<number, string>>({});
 
-  // ── Bounties from AI-created GitHub issues ────────────────────────────────
-  const [selectedAIIssueBounties, setSelectedAIIssueBounties] = useState<Set<number>>(new Set());
-  const [aiIssueBountyAmount, setAiIssueBountyAmount] = useState("0.001");
-  const [isCreatingAIBounties, setIsCreatingAIBounties] = useState(false);
-  const [aiIssueBountiesCreated, setAiIssueBountiesCreated] = useState(false);
+  const [autoFetchTriggered, setAutoFetchTriggered] = useState(false);
 
   const canFetch = useMemo(() => repoUrl.trim().length > 0, [repoUrl]);
   const activeRepoId = registeredRepoId ?? existingRepoId;
-  const allCreatedIssues = [...createdIssues, ...createdSuggestionIssues].filter(i => !i.error && i.url);
   const openIssues = result?.issues.filter(i => i.state === "open") ?? [];
+  const availableIssues = openIssues.filter(i => !registeredIssueUrls.has(i.url));
+
+  useEffect(() => {
+    if (initialRepoUrl && initialRepoUrl !== repoUrl) {
+      setRepoUrl(initialRepoUrl);
+      setAutoFetchTriggered(false);
+    }
+  }, [initialRepoUrl, repoUrl]);
 
   useEffect(() => {
     if (activeRepoId == null) return;
@@ -250,6 +292,90 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
   const addAnalysisLog = useCallback((msg: string, type = "info") => {
     setAnalysisLogs(prev => [...prev, { msg, type, ts: Date.now() }]);
   }, []);
+
+  useEffect(() => {
+    if (securityFindings.length === 0) return;
+    setFindingBountyAmounts(prev => {
+      const next = { ...prev };
+      securityFindings.forEach((f, idx) => {
+        if (!next[idx]) {
+          const aiVal = normalizeBounty(f.bountyEth);
+          if (aiVal) next[idx] = aiVal;
+        }
+      });
+      return next;
+    });
+  }, [securityFindings]);
+
+  useEffect(() => {
+    if (codeSuggestions.length === 0) return;
+    setSuggestionBountyAmounts(prev => {
+      const next = { ...prev };
+      codeSuggestions.forEach((s, idx) => {
+        if (!next[idx]) {
+          const aiVal = normalizeBounty(s.bountyEth);
+          if (aiVal) next[idx] = aiVal;
+        }
+      });
+      return next;
+    });
+  }, [codeSuggestions]);
+
+  const normalizeRepoUrl = useCallback((url?: string | null) => {
+    if (!url) return null;
+    const trimmed = url.trim();
+    if (!trimmed) return null;
+    return trimmed.startsWith("http") ? trimmed : `https://github.com/${trimmed}`;
+  }, []);
+
+  const refreshRepoValue = useCallback(async (repoKey: string) => {
+    try {
+      const repo = await getRepoByUrl(repoKey);
+      if (repo) {
+        setRepoValueEth(formatEthValue(repo.totalFunded));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [getRepoByUrl]);
+
+  const fireAudit = useCallback(async (
+    repoUrl: string | null,
+    action: string,
+    details?: Record<string, unknown>,
+    withBounties = false,
+    repoIdOverride?: number | null,
+  ) => {
+    const normalized = normalizeRepoUrl(repoUrl);
+    if (!normalized) return;
+    try {
+      let bounties: unknown[] = [];
+      const repoId = repoIdOverride ?? activeRepoId;
+      if (withBounties && repoId != null) {
+        const raw = await getRepoBounties(repoId);
+        bounties = JSON.parse(
+          JSON.stringify(raw, (_, v) => (typeof v === "bigint" ? v.toString() : v))
+        );
+      }
+      await fetch("/api/audit-repo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: normalized,
+          bounties,
+          event: {
+            name: "app_action",
+            action,
+            details,
+            source: "add_repo",
+            ts: new Date().toISOString(),
+          },
+        }),
+      });
+    } catch (err) {
+      console.warn("audit trigger failed:", err);
+    }
+  }, [activeRepoId, getRepoBounties, normalizeRepoUrl]);
 
   // ── Color/icon helpers ────────────────────────────────────────────────────
   const getSeverityIcon = (s: string) => {
@@ -279,8 +405,14 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     return "border-green-500 bg-green-500/10 text-green-400";
   };
 
-  const filteredFindings = findingFilter === "ALL" ? securityFindings : securityFindings.filter(f => f.severity === findingFilter);
-  const filteredSuggestions = suggestionFilter === "ALL" ? codeSuggestions : codeSuggestions.filter(s => s.category === suggestionFilter);
+  const filteredFindings = (findingFilter === "ALL"
+    ? securityFindings.map((f, idx) => ({ f, idx }))
+    : securityFindings.map((f, idx) => ({ f, idx })).filter(({ f }) => f.severity === findingFilter)
+  );
+  const filteredSuggestions = (suggestionFilter === "ALL"
+    ? codeSuggestions.map((s, idx) => ({ s, idx }))
+    : codeSuggestions.map((s, idx) => ({ s, idx })).filter(({ s }) => s.category === suggestionFilter)
+  );
 
   const toggle = (set: Set<number>, setFn: React.Dispatch<React.SetStateAction<Set<number>>>, i: number) => {
     setFn(prev => { const next = new Set(prev); if (next.has(i)) next.delete(i); else next.add(i); return next; });
@@ -300,21 +432,104 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
   const createGitHubIssues = async () => {
     if (selectedFindings.size === 0 || !result) return;
+    if (!activeRepoId) { setError("Repo not registered on-chain yet."); return; }
     setIsCreatingIssues(true);
-    try { setCreatedIssues(await postIssues([...selectedFindings].map(i => securityFindings[i]))); setSelectedFindings(new Set()); }
-    catch (err) { setError(err instanceof Error ? err.message : "Failed"); }
-    finally { setIsCreatingIssues(false); }
+    try {
+      const selected = [...selectedFindings];
+      const missing = selected.filter(i => !normalizeBounty(findingBountyAmounts[i] ?? securityFindings[i]?.bountyEth));
+      if (missing.length > 0) {
+        setError(`Missing bounty amounts for ${missing.length} selected issue(s). Use the AI output or enter a value.`);
+        setIsCreatingIssues(false);
+        return;
+      }
+      const toPost = selected.map(i => securityFindings[i]);
+      const created = await postIssues(toPost);
+      setCreatedIssues(created);
+      setSelectedFindings(new Set());
+
+      const toCreate = created.map((issue, idx) => {
+        if (!issue?.url) return null;
+        const original = toPost[idx];
+        const urlMatch = issue.url.match(/\/issues\/(\d+)$/);
+        const amountEth = normalizeBounty(findingBountyAmounts[selected[idx]] ?? original.bountyEth);
+        if (!amountEth) return null;
+        return {
+          url: issue.url,
+          id: urlMatch ? urlMatch[1] : "0",
+          title: issue.title || original.type,
+          description: original.description,
+          amountEth,
+          severity: aiSeverityToContractSeverity(original.severity),
+        };
+      }).filter(Boolean) as Array<{ url: string; id: string; title: string; description: string; amountEth: string; severity: number }>;
+
+      if (toCreate.length > 0) {
+        await batchCreateBounties(activeRepoId, toCreate);
+      }
+
+      setStatusMessage(`Created ${created.filter(i => !i.error).length} issue(s) and ${toCreate.length} bounty(ies).`);
+      void fireAudit(result?.repo?.htmlUrl || null, "create_issues_and_bounties", { issues: created.length, bounties: toCreate.length, kind: "security_findings" }, true, activeRepoId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setIsCreatingIssues(false);
+    }
   };
 
   const createSuggestionIssues = async () => {
     if (selectedSuggestions.size === 0 || !result) return;
+    if (!activeRepoId) { setError("Repo not registered on-chain yet."); return; }
     setIsCreatingSuggestionIssues(true);
     try {
-      const toCreate = [...selectedSuggestions].map(i => { const s = codeSuggestions[i]; return { severity: s.priority, type: `[${s.category}] ${s.title}`, file: s.file, line: s.line, description: s.description, suggestion: s.example || "See description." }; });
-      setCreatedSuggestionIssues(await postIssues(toCreate));
+      const selected = [...selectedSuggestions];
+      const missing = selected.filter(i => !normalizeBounty(suggestionBountyAmounts[i] ?? codeSuggestions[i]?.bountyEth));
+      if (missing.length > 0) {
+        setError(`Missing bounty amounts for ${missing.length} selected suggestion(s). Use the AI output or enter a value.`);
+        setIsCreatingSuggestionIssues(false);
+        return;
+      }
+      const toPost = selected.map(i => {
+        const s = codeSuggestions[i];
+        return {
+          severity: s.priority,
+          type: `[${s.category}] ${s.title}`,
+          file: s.file,
+          line: s.line,
+          description: s.description,
+          suggestion: s.example || "See description.",
+        };
+      });
+      const created = await postIssues(toPost);
+      setCreatedSuggestionIssues(created);
       setSelectedSuggestions(new Set());
-    } catch (err) { setError(err instanceof Error ? err.message : "Failed"); }
-    finally { setIsCreatingSuggestionIssues(false); }
+
+      const toCreate = created.map((issue, idx) => {
+        if (!issue?.url) return null;
+        const original = codeSuggestions[selected[idx]];
+        const urlMatch = issue.url.match(/\/issues\/(\d+)$/);
+        const amountEth = normalizeBounty(suggestionBountyAmounts[selected[idx]] ?? original.bountyEth);
+        if (!amountEth) return null;
+        return {
+          url: issue.url,
+          id: urlMatch ? urlMatch[1] : "0",
+          title: issue.title || original.title,
+          description: original.description,
+          amountEth,
+          severity: priorityToContractSeverity(original.priority),
+        };
+      }).filter(Boolean) as Array<{ url: string; id: string; title: string; description: string; amountEth: string; severity: number }>;
+
+      if (toCreate.length > 0) {
+        await batchCreateBounties(activeRepoId, toCreate);
+      }
+
+      setStatusMessage(`Created ${created.filter(i => !i.error).length} issue(s) and ${toCreate.length} bounty(ies).`);
+      void fireAudit(result?.repo?.htmlUrl || null, "create_issues_and_bounties", { issues: created.length, bounties: toCreate.length, kind: "suggestions" }, true, activeRepoId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setIsCreatingSuggestionIssues(false);
+    }
   };
 
   // ── On-chain: Register Repo ───────────────────────────────────────────────
@@ -326,16 +541,29 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       const parsed = parseRepoURL(result.repo.htmlUrl);
       if (!parsed) throw new Error("Cannot parse repo URL");
       const id = await registerRepo(`${parsed.owner}/${parsed.repo}`, stakeEth);
-      if (id) { setRegisteredRepoId(id); setStatusMessage(`Registered on-chain! Repo ID: ${id}`); }
+      if (id) {
+        setRegisteredRepoId(id);
+        setStatusMessage(`Registered on-chain! Repo ID: ${id}`);
+        setRepoValueEth(stakeEth);
+        void refreshRepoValue(`${parsed.owner}/${parsed.repo}`);
+        void fireAudit(result.repo.htmlUrl, "register_repo", { repoId: id, stakeEth }, true, id);
+      }
     } catch (err) { setRegisterError(err instanceof Error ? err.message : "Registration failed"); }
     finally { setIsRegistering(false); }
   };
 
   const checkExistingRegistration = useCallback(async (snapshot: RepoSnapshot) => {
     const parsed = parseRepoURL(snapshot.repo.htmlUrl);
-    if (!parsed) return;
+    if (!parsed) return { id: null, repoValueEth: null };
     const existing = await getRepoByUrl(`${parsed.owner}/${parsed.repo}`);
-    if (existing && Number(existing.id) > 0) setExistingRepoId(Number(existing.id));
+    if (existing && Number(existing.id) > 0) {
+      const id = Number(existing.id);
+      const valueEth = formatEthValue(existing.totalFunded);
+      setExistingRepoId(id);
+      setRepoValueEth(valueEth);
+      return { id, repoValueEth: valueEth };
+    }
+    return { id: null, repoValueEth: null };
   }, [getRepoByUrl]);
 
   // ── On-chain: Bounties from GitHub issues ─────────────────────────────────
@@ -345,47 +573,31 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     setRegisterError(null);
     try {
       const toCreate = [...selectedIssues].map(idx => {
-        const issue = openIssues[idx];
+        const issue = availableIssues[idx];
         return { url: issue.url, id: String(issue.number), title: issue.title, description: `GitHub issue #${issue.number} by ${issue.user}`, amountEth: issueBountyAmounts[idx] || "0.001", severity: issueSeverities[idx] ?? 1 };
       });
       await batchCreateBounties(activeRepoId, toCreate);
       setIssueBountiesCreated(true);
       setSelectedIssues(new Set());
       setStatusMessage(`Created ${toCreate.length} bounty(ies) on-chain!`);
+      void fireAudit(result.repo.htmlUrl, "create_issue_bounties", { count: toCreate.length }, true, activeRepoId);
     } catch (err) { setRegisterError(err instanceof Error ? err.message : "Bounty creation failed"); }
     finally { setIsCreatingIssueBounties(false); }
   };
 
-  // ── On-chain: Bounties from AI-created GitHub issues ──────────────────────
-  const handleCreateAIBounties = async () => {
-    if (!activeRepoId || selectedAIIssueBounties.size === 0) return;
-    setIsCreatingAIBounties(true);
-    setRegisterError(null);
-    try {
-      const toCreate = [...selectedAIIssueBounties].map(idx => {
-        const issue = allCreatedIssues[idx];
-        const urlMatch = issue.url?.match(/\/issues\/(\d+)$/);
-        const createdIdx = createdIssues.findIndex(c => c.url === issue.url);
-        const sev = createdIdx >= 0 ? aiSeverityToContractSeverity(securityFindings[createdIdx]?.severity || "LOW") : 1;
-        return { url: issue.url!, id: urlMatch ? urlMatch[1] : "0", title: issue.title || "AI-detected issue", description: securityFindings[createdIdx]?.description || issue.title || "", amountEth: aiIssueBountyAmount, severity: sev };
-      });
-      await batchCreateBounties(activeRepoId, toCreate);
-      setAiIssueBountiesCreated(true);
-      setSelectedAIIssueBounties(new Set());
-      setStatusMessage(`Created ${toCreate.length} AI-detected bounty(ies) on-chain!`);
-    } catch (err) { setRegisterError(err instanceof Error ? err.message : "AI bounty creation failed"); }
-    finally { setIsCreatingAIBounties(false); }
-  };
-
   // ── AI Analysis ───────────────────────────────────────────────────────────
-  const runSecurityAnalysis = useCallback(async (snapshot: RepoSnapshot) => {
+  const runSecurityAnalysis = useCallback(async (snapshot: RepoSnapshot, repoValueOverride?: string) => {
     const parsed = parseRepoURL(snapshot.repo.htmlUrl);
     if (!parsed) { setError("Cannot parse repository URL"); return false; }
+
+    const repoValueForAi = repoValueOverride || repoValueEth || stakeEth;
 
     setAnalyzing(true);
     setAnalysisLogs([]);
     setSecurityFindings([]);
     setCodeSuggestions([]);
+    setFindingBountyAmounts({});
+    setSuggestionBountyAmounts({});
     setExpandedFinding(null);
     setExpandedSuggestion(null);
     setAnalysisComplete(false);
@@ -397,6 +609,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     const { owner, repo } = parsed;
     try {
       addAnalysisLog(`🔍 Starting security analysis for ${owner}/${repo}...`);
+      addAnalysisLog(`💰 Repo value for bounties: ${repoValueForAi} ETH`);
       const codeFiles = snapshot.fileTree.filter(f => f.type === "blob" && shouldIncludeFile(f.path, f.size));
       const maxFiles = Math.min(codeFiles.length, 5);
       addAnalysisLog(`📂 Analyzing ${maxFiles} of ${codeFiles.length} code files...`);
@@ -413,7 +626,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       const allFindings: SecurityFinding[] = [];
       for (let i = 0; i < allChunks.length; i++) {
         addAnalysisLog(`🔒 Security chunk ${i + 1}/${allChunks.length}: ${allChunks[i].filePath}...`);
-        const results = await analyzeChunkWithAI(allChunks[i]);
+        const results = await analyzeChunkWithAI(allChunks[i], repoValueForAi);
         allFindings.push(...results);
         if (results.length > 0) addAnalysisLog(`⚠️ Found ${results.length} issue(s)`, "warn");
         await new Promise(r => setTimeout(r, 1500));
@@ -423,7 +636,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       addAnalysisLog(`💡 Generating suggestions...`);
       for (let i = 0; i < allChunks.length; i++) {
         addAnalysisLog(`💡 Suggestions chunk ${i + 1}/${allChunks.length}: ${allChunks[i].filePath}...`);
-        allSuggestions.push(...await suggestImprovementsWithAI(allChunks[i]));
+        allSuggestions.push(...await suggestImprovementsWithAI(allChunks[i], repoValueForAi));
         await new Promise(r => setTimeout(r, 1500));
       }
 
@@ -432,6 +645,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       setAnalysisStats({ filesAnalyzed: maxFiles, chunksAnalyzed: allChunks.length, issuesFound: allFindings.length, suggestionsGenerated: allSuggestions.length });
       addAnalysisLog(`✅ Done! ${allFindings.length} security issues, ${allSuggestions.length} suggestions`, "success");
       setAnalysisComplete(true);
+      void fireAudit(snapshot.repo.htmlUrl, "run_analysis", {
+        filesAnalyzed: maxFiles,
+        chunksAnalyzed: allChunks.length,
+        issuesFound: allFindings.length,
+        suggestionsGenerated: allSuggestions.length,
+      });
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Analysis failed";
@@ -441,7 +660,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setAnalyzing(false);
     }
-  }, [addAnalysisLog]);
+  }, [addAnalysisLog, repoValueEth, stakeEth]);
 
   // ── Fetch helpers ─────────────────────────────────────────────────────────
   const redirectToInstall = useCallback((baseInstallUrl: string, repo: string) => {
@@ -465,8 +684,8 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     setStatusMessage(null);
     setRegisteredRepoId(null);
     setExistingRepoId(null);
+    setRepoValueEth(null);
     setIssueBountiesCreated(false);
-    setAiIssueBountiesCreated(false);
     try {
       const response = await fetch(`/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`);
       const rawPayload: unknown = await response.json();
@@ -481,10 +700,42 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
       const sp = rawPayload as RepoSnapshot;
       setResult(sp);
       setStatusMessage("Repository fetched. Checking on-chain status...");
-      await checkExistingRegistration(sp);
+      const existing = await checkExistingRegistration(sp);
+      let autoRegisteredId: number | null = existing.id;
+      let analysisRepoValue = existing.repoValueEth;
+      if (!existing.id) {
+        if (!isConnected) {
+          setStatusMessage("Connect wallet to auto-register this repo.");
+        } else {
+          setStatusMessage("Registering repo on-chain...");
+          try {
+            const parsed = parseRepoURL(sp.repo.htmlUrl);
+            if (parsed) {
+              const id = await registerRepo(`${parsed.owner}/${parsed.repo}`, stakeEth);
+              if (id) {
+                setRegisteredRepoId(id);
+                autoRegisteredId = id;
+                analysisRepoValue = stakeEth;
+                setStatusMessage(`Registered on-chain! Repo ID: ${id}`);
+                setRepoValueEth(stakeEth);
+                void refreshRepoValue(`${parsed.owner}/${parsed.repo}`);
+                void fireAudit(sp.repo.htmlUrl, "register_repo", { repoId: id, stakeEth }, true, id);
+              }
+            }
+          } catch (regErr) {
+            setRegisterError(regErr instanceof Error ? regErr.message : "Auto-registration failed");
+          }
+        }
+      }
       setStatusMessage("Running AI analysis...");
-      const ok = await runSecurityAnalysis(sp);
+      const ok = await runSecurityAnalysis(sp, analysisRepoValue || stakeEth);
       setStatusMessage(ok ? "Fetch + analysis complete." : "Fetched, but analysis failed.");
+      void fireAudit(sp.repo.htmlUrl, "fetch_repo_snapshot", {
+        issues: sp.summary.issueCount,
+        prs: sp.summary.pullRequestCount,
+        analysis: ok ? "success" : "failed",
+        autoRegisteredRepoId: autoRegisteredId,
+      });
       return ok;
     } catch (fetchError: unknown) {
       setResult(null);
@@ -493,13 +744,19 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [redirectToInstall, runSecurityAnalysis, checkExistingRegistration]);
+  }, [redirectToInstall, runSecurityAnalysis, checkExistingRegistration, isConnected, registerRepo, stakeEth, fireAudit, refreshRepoValue]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canFetch) { setError("Enter a GitHub repo URL first."); return; }
     await fetchRepoSnapshot(repoUrl);
   };
+
+  useEffect(() => {
+    if (!autoFetch || !initialRepoUrl || autoFetchTriggered) return;
+    setAutoFetchTriggered(true);
+    void fetchRepoSnapshot(initialRepoUrl);
+  }, [autoFetch, autoFetchTriggered, fetchRepoSnapshot, initialRepoUrl]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -537,17 +794,30 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
         )}
 
         {/* ── Fetch Form ──────────────────────────────────────────────────── */}
-        <form onSubmit={handleSubmit} className="space-y-4 border-2 border-border bg-card p-4 md:p-6">
-          <label htmlFor="repo-url" className="block font-mono text-sm font-bold uppercase text-muted-foreground">GitHub URL or owner/repo</label>
-          <input id="repo-url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://github.com/octocat/Hello-World" className="w-full border-2 border-border bg-background px-3 py-2 font-mono text-sm focus:border-neon-green focus:outline-none" />
-          <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-70">
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Fetching</> : "Fetch Repo Data"}
-            </button>
-            <p className="font-mono text-sm text-muted-foreground">Requires GitHub App to be installed on the target repository.</p>
+        {!hideRepoInput ? (
+          <form onSubmit={handleSubmit} className="space-y-4 border-2 border-border bg-card p-4 md:p-6">
+            <label htmlFor="repo-url" className="block font-mono text-sm font-bold uppercase text-muted-foreground">GitHub URL or owner/repo</label>
+            <input id="repo-url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="https://github.com/octocat/Hello-World" className="w-full border-2 border-border bg-background px-3 py-2 font-mono text-sm focus:border-neon-green focus:outline-none" />
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="submit" disabled={loading} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-70">
+                {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Fetching</> : "Fetch Repo Data"}
+              </button>
+              <p className="font-mono text-sm text-muted-foreground">Requires GitHub App to be installed on the target repository.</p>
+            </div>
+            <p className="font-mono text-sm text-muted-foreground">Set GitHub App Setup URL to: {window.location.origin}/add-repo</p>
+          </form>
+        ) : (
+          <div className="border-2 border-border bg-card p-4 md:p-6 space-y-3">
+            <div className="font-mono text-sm font-bold uppercase text-muted-foreground">// repo</div>
+            <div className="font-mono text-sm text-foreground break-all">{repoUrl || "—"}</div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button onClick={() => repoUrl && fetchRepoSnapshot(repoUrl)} disabled={loading || !repoUrl} className="brutal-btn inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-70">
+                {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Fetching</> : "Fetch Latest + Analyze"}
+              </button>
+              <p className="font-mono text-sm text-muted-foreground">Uses GitHub App access for latest repo state.</p>
+            </div>
           </div>
-          <p className="font-mono text-sm text-muted-foreground">Set GitHub App Setup URL to: {window.location.origin}/add-repo</p>
-        </form>
+        )}
 
         {statusMessage && <div className="border-2 border-neon-cyan bg-neon-cyan/10 px-4 py-3 font-mono text-sm text-neon-cyan">{statusMessage}</div>}
         {error && <div className="border-2 border-neon-red bg-neon-red/10 px-4 py-3 font-mono text-sm text-neon-red">{error}</div>}
@@ -614,12 +884,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
             </section>
 
             {/* ── BOUNTIES FROM OPEN GITHUB ISSUES ────────────────────────── */}
-            {activeRepoId && openIssues.length > 0 && (
+            {activeRepoId && availableIssues.length > 0 && (
               <section className="border-2 border-neon-amber bg-card p-4 md:p-5">
                 <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Plus className="h-4 w-4 text-neon-amber" />
-                    <h3 className="font-display text-base font-extrabold uppercase text-neon-amber">Create Bounties from Open Issues ({openIssues.length})</h3>
+                    <h3 className="font-display text-base font-extrabold uppercase text-neon-amber">Create Bounties from Open Issues ({availableIssues.length})</h3>
                   </div>
                   <div className="flex items-center gap-2">
                     {selectedIssues.size > 0 && !issueBountiesCreated && (
@@ -631,24 +901,49 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                 </div>
                 <div className="max-h-64 space-y-2 overflow-auto">
-                  {openIssues.map((issue, idx) => {
-                    const alreadyRegistered = registeredIssueUrls.has(issue.url);
+                  {availableIssues.map((issue, idx) => {
+                    const selected = selectedIssues.has(idx);
                     return (
-                      <div key={issue.id} className={`border-2 p-3 ${alreadyRegistered ? "border-border bg-background opacity-50" : selectedIssues.has(idx) ? "border-neon-amber bg-neon-amber/10" : "border-border bg-background"}`}>
+                      <div
+                        key={issue.id}
+                        className={`border-2 p-3 ${selected ? "border-neon-amber bg-neon-amber/10" : "border-border bg-background"}`}
+                      >
                         <div className="flex items-start gap-2">
-                          <input type="checkbox" disabled={alreadyRegistered} checked={selectedIssues.has(idx)} onChange={() => toggle(selectedIssues, setSelectedIssues, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-amber-500 shrink-0 disabled:cursor-not-allowed" />
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggle(selectedIssues, setSelectedIssues, idx)}
+                            className="mt-1 h-4 w-4 cursor-pointer accent-amber-500 shrink-0"
+                          />
                           <div className="flex-1 min-w-0">
-                            <div className="font-mono text-sm font-bold truncate">#{issue.number} {issue.title}</div>
-                            <div className="font-mono text-sm text-muted-foreground">by {issue.user} · {formatDate(issue.createdAt)}</div>
+                            <div className="font-mono text-sm font-bold truncate">
+                              #{issue.number} {issue.title}
+                            </div>
+                            <div className="font-mono text-sm text-muted-foreground">
+                              by {issue.user} · {formatDate(issue.createdAt)}
+                            </div>
                           </div>
-                          {alreadyRegistered ? (
-                            <span className="shrink-0 border-2 border-neon-green bg-neon-green/10 px-2 py-0.5 font-mono text-xs font-bold text-neon-green">BOUNTY EXISTS</span>
-                          ) : selectedIssues.has(idx) && (
+                          {selected && (
                             <div className="flex items-center gap-2 shrink-0">
-                              <select value={issueSeverities[idx] ?? 1} onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))} className="border border-border bg-background px-1 py-0.5 font-mono text-sm">
-                                <option value={0}>LOW</option><option value={1}>MEDIUM</option><option value={2}>HIGH</option><option value={3}>CRITICAL</option>
+                              <select
+                                value={issueSeverities[idx] ?? 1}
+                                onChange={e => setIssueSeverities(p => ({ ...p, [idx]: Number(e.target.value) }))}
+                                className="border border-border bg-background px-1 py-0.5 font-mono text-sm"
+                              >
+                                <option value={0}>LOW</option>
+                                <option value={1}>MEDIUM</option>
+                                <option value={2}>HIGH</option>
+                                <option value={3}>CRITICAL</option>
                               </select>
-                              <input type="number" step="0.001" min="0.001" placeholder="ETH" value={issueBountyAmounts[idx] || "0.001"} onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))} className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-sm" />
+                              <input
+                                type="number"
+                                step="0.001"
+                                min="0.001"
+                                placeholder="ETH"
+                                value={issueBountyAmounts[idx] || "0.001"}
+                                onChange={e => setIssueBountyAmounts(p => ({ ...p, [idx]: e.target.value }))}
+                                className="w-20 border border-border bg-background px-1 py-0.5 font-mono text-sm"
+                              />
                             </div>
                           )}
                         </div>
@@ -657,6 +952,12 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   })}
                 </div>
               </section>
+            )}
+
+            {activeRepoId && openIssues.length > 0 && availableIssues.length === 0 && (
+              <div className="border-2 border-border bg-surface-2 p-4 font-mono text-sm text-muted-foreground">
+                All open GitHub issues already have on-chain bounties.
+              </div>
             )}
 
             {/* ── ANALYSIS LOG + STATS ─────────────────────────────────────── */}
@@ -708,7 +1009,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                       </select>
                       {selectedFindings.size > 0 && (
                         <button onClick={createGitHubIssues} disabled={isCreatingIssues} className="font-mono text-sm font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
-                          {isCreatingIssues ? "Creating…" : `🐛 Open ${selectedFindings.size} on GitHub`}
+                          {isCreatingIssues ? "Creating…" : `Create ${selectedFindings.size} Issue(s) + Bounties`}
                         </button>
                       )}
                     </div>
@@ -720,15 +1021,17 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                         <div className="font-mono text-sm font-bold text-neon-green">No Issues Found</div>
                       </div>
                     )}
-                    {filteredFindings.map((f, i) => {
-                      const isExp = expandedFinding === i;
-                      const isSel = selectedFindings.has(i);
+                    {filteredFindings.map(({ f, idx }) => {
+                      const isExp = expandedFinding === idx;
+                      const isSel = selectedFindings.has(idx);
+                      const bountyValue = findingBountyAmounts[idx] ?? "";
+                      const missingBounty = !normalizeBounty(bountyValue);
                       return (
-                        <div key={i} className={`border-2 ${getSeverityColor(f.severity)} ${isSel ? "ring-2 ring-blue-500" : ""}`}>
+                        <div key={idx} className={`border-2 ${getSeverityColor(f.severity)} ${isSel ? "ring-2 ring-blue-500" : ""}`}>
                           <div className="p-3">
                             <div className="flex items-start gap-2">
-                              <input type="checkbox" checked={isSel} onChange={() => toggle(selectedFindings, setSelectedFindings, i)} className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
-                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedFinding(isExp ? null : i)}>
+                              <input type="checkbox" checked={isSel} onChange={() => toggle(selectedFindings, setSelectedFindings, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
+                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedFinding(isExp ? null : idx)}>
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-2 min-w-0">
                                     {getSeverityIcon(f.severity)}
@@ -747,6 +1050,18 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                                     </div>
                                   </div>
                                 )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className="font-mono text-[10px] uppercase text-muted-foreground">Bounty</span>
+                                <input
+                                  type="number"
+                                  step="0.0001"
+                                  min="0.0001"
+                                  value={bountyValue}
+                                  placeholder={missingBounty ? "AI required" : "ETH"}
+                                  onChange={(e) => setFindingBountyAmounts(prev => ({ ...prev, [idx]: e.target.value }))}
+                                  className={`w-20 border bg-background px-1 py-0.5 font-mono text-xs ${missingBounty ? "border-neon-red" : "border-border"}`}
+                                />
                               </div>
                             </div>
                           </div>
@@ -779,7 +1094,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                       </select>
                       {selectedSuggestions.size > 0 && (
                         <button onClick={createSuggestionIssues} disabled={isCreatingSuggestionIssues} className="font-mono text-sm font-bold px-3 py-1 border-2 border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 disabled:opacity-50">
-                          {isCreatingSuggestionIssues ? "Creating…" : `🐛 Open ${selectedSuggestions.size} on GitHub`}
+                          {isCreatingSuggestionIssues ? "Creating…" : `Create ${selectedSuggestions.size} Issue(s) + Bounties`}
                         </button>
                       )}
                     </div>
@@ -791,15 +1106,17 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                         <div className="font-mono text-sm font-bold text-blue-400">Code Looks Great!</div>
                       </div>
                     )}
-                    {filteredSuggestions.map((s, i) => {
-                      const isExp = expandedSuggestion === i;
-                      const isSel = selectedSuggestions.has(i);
+                    {filteredSuggestions.map(({ s, idx }) => {
+                      const isExp = expandedSuggestion === idx;
+                      const isSel = selectedSuggestions.has(idx);
+                      const bountyValue = suggestionBountyAmounts[idx] ?? "";
+                      const missingBounty = !normalizeBounty(bountyValue);
                       return (
-                        <div key={i} className={`border-2 ${getPriorityColor(s.priority)} ${isSel ? "ring-2 ring-blue-500" : ""}`}>
+                        <div key={idx} className={`border-2 ${getPriorityColor(s.priority)} ${isSel ? "ring-2 ring-blue-500" : ""}`}>
                           <div className="p-3">
                             <div className="flex items-start gap-2">
-                              <input type="checkbox" checked={isSel} onChange={() => toggle(selectedSuggestions, setSelectedSuggestions, i)} className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
-                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedSuggestion(isExp ? null : i)}>
+                              <input type="checkbox" checked={isSel} onChange={() => toggle(selectedSuggestions, setSelectedSuggestions, idx)} className="mt-1 h-4 w-4 cursor-pointer accent-blue-500 shrink-0" />
+                              <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedSuggestion(isExp ? null : idx)}>
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                     {getCategoryIcon(s.category)}
@@ -822,6 +1139,18 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                                   </div>
                                 )}
                               </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className="font-mono text-[10px] uppercase text-muted-foreground">Bounty</span>
+                                <input
+                                  type="number"
+                                  step="0.0001"
+                                  min="0.0001"
+                                  value={bountyValue}
+                                  placeholder={missingBounty ? "AI required" : "ETH"}
+                                  onChange={(e) => setSuggestionBountyAmounts(prev => ({ ...prev, [idx]: e.target.value }))}
+                                  className={`w-20 border bg-background px-1 py-0.5 font-mono text-xs ${missingBounty ? "border-neon-red" : "border-border"}`}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -842,39 +1171,6 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
                   )}
                 </section>
               </div>
-            )}
-
-            {/* ── BOUNTIES FROM AI-CREATED GITHUB ISSUES ──────────────────── */}
-            {activeRepoId && allCreatedIssues.length > 0 && (
-              <section className="border-2 border-neon-green/50 bg-card p-4 md:p-5">
-                <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-neon-green" />
-                    <h3 className="font-display text-base font-extrabold uppercase text-neon-green">Create Bounties from AI Issues ({allCreatedIssues.length})</h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="font-mono text-sm font-bold uppercase text-muted-foreground">Reward (ETH each)</label>
-                    <input type="number" step="0.001" min="0.001" value={aiIssueBountyAmount} onChange={e => setAiIssueBountyAmount(e.target.value)} className="w-20 border-2 border-border bg-background px-2 py-1 font-mono text-sm" />
-                  </div>
-                </div>
-                {selectedAIIssueBounties.size > 0 && !aiIssueBountiesCreated && (
-                  <button onClick={handleCreateAIBounties} disabled={isCreatingAIBounties} className="brutal-btn mb-3 inline-flex items-center gap-2 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold uppercase text-primary-foreground disabled:opacity-60">
-                    {isCreatingAIBounties ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : `Create ${selectedAIIssueBounties.size} Bounty(ies)`}
-                  </button>
-                )}
-                {aiIssueBountiesCreated && <span className="font-mono text-sm font-bold text-neon-green flex items-center gap-1 mb-3"><CheckCircle className="h-3.5 w-3.5" /> Created!</span>}
-                <div className="max-h-48 space-y-2 overflow-auto">
-                  {allCreatedIssues.map((issue, idx) => (
-                    <div key={idx} className={`border-2 p-3 ${selectedAIIssueBounties.has(idx) ? "border-neon-green bg-neon-green/10" : "border-border bg-background"}`}>
-                      <div className="flex items-center gap-2">
-                        <input type="checkbox" checked={selectedAIIssueBounties.has(idx)} onChange={() => toggle(selectedAIIssueBounties, setSelectedAIIssueBounties, idx)} className="h-4 w-4 cursor-pointer accent-green-500 shrink-0" />
-                        <span className="font-mono text-sm opacity-60 shrink-0">#{issue.number}</span>
-                        <a href={issue.url} target="_blank" rel="noopener noreferrer" className="font-mono text-sm font-bold text-neon-cyan hover:underline truncate">{issue.title}</a>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
             )}
 
             {/* ── REPO DETAILS ─────────────────────────────────────────────── */}
