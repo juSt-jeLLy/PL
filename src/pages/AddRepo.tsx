@@ -365,10 +365,14 @@ export function AddRepoContent({
       let bounties: unknown[] = [];
       const repoId = repoIdOverride ?? activeRepoId;
       if (withBounties && repoId != null) {
-        const raw = await getRepoBounties(repoId);
-        bounties = JSON.parse(
-          JSON.stringify(raw, (_, v) => (typeof v === "bigint" ? v.toString() : v))
-        );
+        try {
+          const raw = await getRepoBounties(repoId);
+          bounties = JSON.parse(
+            JSON.stringify(raw, (_, v) => (typeof v === "bigint" ? v.toString() : v))
+          );
+        } catch (err) {
+          console.warn("audit bounties fetch failed:", err);
+        }
       }
       await fetch("/api/audit-repo", {
         method: "POST",
@@ -376,6 +380,7 @@ export function AddRepoContent({
         body: JSON.stringify({
           repoUrl: normalized,
           bounties,
+          eventOnly: true,
           event: {
             name: "app_action",
             action,

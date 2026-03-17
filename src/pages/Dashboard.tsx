@@ -264,16 +264,22 @@ export default function Dashboard() {
     try {
       const repoUrl = await resolveRepoUrl(repoId);
       if (!repoUrl) return;
-      const rawBounties = await getRepoBounties(Number(repoId));
-      const bountiesSerialized = JSON.parse(
-        JSON.stringify(rawBounties, (_, v) => (typeof v === "bigint" ? v.toString() : v))
-      );
+      let bountiesSerialized: unknown[] = [];
+      try {
+        const rawBounties = await getRepoBounties(Number(repoId));
+        bountiesSerialized = JSON.parse(
+          JSON.stringify(rawBounties, (_, v) => (typeof v === "bigint" ? v.toString() : v))
+        );
+      } catch (err) {
+        console.warn("audit bounties fetch failed:", err);
+      }
       await fetch("/api/audit-repo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           repoUrl,
           bounties: bountiesSerialized,
+          eventOnly: true,
           event: {
             name: "app_action",
             action,
