@@ -144,27 +144,41 @@ async function fetchFileContent(owner: string, repo: string, path: string) {
 async function analyzeChunkWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }, repoValueEth: string): Promise<SecurityFinding[]> {
   const prompt = `You are a senior code security analyst. Analyze code from "${chunk.filePath}" (chunk ${chunk.chunkIndex + 1}/${chunk.total}).\nRepository total funded value: ${repoValueEth} ETH.\n\nReturn ONLY valid JSON array:\n[\n  {\n    "severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO",\n    "type": "vulnerability type",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "description": "description",\n    "suggestion": "fix",\n    "bountyEth": "suggested bounty amount in ETH"\n  }\n]\nIf no issues: []\n\nGuidance for bountyEth:\n- Base = repoValueEth / 100 (approx)\n- HIGH/MEDIUM can be ~2-3x base\n- CRITICAL can be 5-10x base\n- Return a numeric string in ETH (up to 6 decimals)\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
 
-  const response = await fetch(`${BACKEND_URL}/api/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gemini-1.5-flash", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
-  });
-  const data = await response.json();
-  const text = data.content?.map((b: { text?: string }) => b.text || "").join("") || "[]";
-  try { return JSON.parse(text.replace(/```json|```/g, "").trim()); } catch { return []; }
+  return await postAnalyzeWithRetry(prompt);
 }
 
 async function suggestImprovementsWithAI(chunk: { filePath: string; content: string; chunkIndex: number; total: number }, repoValueEth: string): Promise<CodeSuggestion[]> {
   const prompt = `You are a senior software engineer. Suggest improvements for code from "${chunk.filePath}".\nRepository total funded value: ${repoValueEth} ETH.\n\nReturn ONLY valid JSON array:\n[\n  {\n    "category": "Architecture|Readability|Edge Case|Better Approach|Testing",\n    "priority": "HIGH|MEDIUM|LOW",\n    "file": "${chunk.filePath}",\n    "line": "line number or null",\n    "title": "short title",\n    "description": "explanation",\n    "example": "optional code snippet",\n    "bountyEth": "suggested bounty amount in ETH"\n  }\n]\nIf none: []\n\nGuidance for bountyEth:\n- Base = repoValueEth / 100 (approx)\n- HIGH priority can be 5-10x base for critical impact\n- MEDIUM can be ~2-3x base; LOW near base\n- Return a numeric string in ETH (up to 6 decimals)\n\nCODE:\n\`\`\`\n${chunk.content.slice(0, 6000)}\n\`\`\``;
 
-  const response = await fetch(`${BACKEND_URL}/api/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gemini-1.5-flash", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
-  });
-  const data = await response.json();
-  const text = data.content?.map((b: { text?: string }) => b.text || "").join("") || "[]";
-  try { return JSON.parse(text.replace(/```json|```/g, "").trim()); } catch { return []; }
+  return await postAnalyzeWithRetry(prompt);
+}
+
+async function postAnalyzeWithRetry(prompt: string, retries = 3): Promise<any[]> {
+  let attempt = 0;
+  while (attempt <= retries) {
+    const response = await fetch(`${BACKEND_URL}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gemini-1.5-flash", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+    });
+
+    if (response.status === 429) {
+      const delay = Math.min(15000, 1500 * Math.pow(2, attempt));
+      await new Promise(r => setTimeout(r, delay));
+      attempt += 1;
+      continue;
+    }
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`AI analyze failed (${response.status}): ${text}`);
+    }
+
+    const data = await response.json();
+    const text = data.content?.map((b: { text?: string }) => b.text || "").join("") || "[]";
+    try { return JSON.parse(text.replace(/```json|```/g, "").trim()); } catch { return []; }
+  }
+  throw new Error("AI rate limit exceeded. Try again in a minute.");
 }
 
 const INSTALL_PENDING_REPO_KEY = "mergex:pending-github-repo";
@@ -267,7 +281,6 @@ export function AddRepoContent({
   const [createdSuggestionIssues, setCreatedSuggestionIssues] = useState<Array<{ number?: number; url?: string; title?: string; error?: string; type?: string }>>([]);
   const [findingBountyAmounts, setFindingBountyAmounts] = useState<Record<number, string>>({});
   const [suggestionBountyAmounts, setSuggestionBountyAmounts] = useState<Record<number, string>>({});
-
   const [autoFetchTriggered, setAutoFetchTriggered] = useState(false);
 
   const canFetch = useMemo(() => repoUrl.trim().length > 0, [repoUrl]);
@@ -352,10 +365,14 @@ export function AddRepoContent({
       let bounties: unknown[] = [];
       const repoId = repoIdOverride ?? activeRepoId;
       if (withBounties && repoId != null) {
-        const raw = await getRepoBounties(repoId);
-        bounties = JSON.parse(
-          JSON.stringify(raw, (_, v) => (typeof v === "bigint" ? v.toString() : v))
-        );
+        try {
+          const raw = await getRepoBounties(repoId);
+          bounties = JSON.parse(
+            JSON.stringify(raw, (_, v) => (typeof v === "bigint" ? v.toString() : v))
+          );
+        } catch (err) {
+          console.warn("audit bounties fetch failed:", err);
+        }
       }
       await fetch("/api/audit-repo", {
         method: "POST",
@@ -363,6 +380,7 @@ export function AddRepoContent({
         body: JSON.stringify({
           repoUrl: normalized,
           bounties,
+          eventOnly: true,
           event: {
             name: "app_action",
             action,
