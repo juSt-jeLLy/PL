@@ -210,6 +210,7 @@ export default function Dashboard() {
   // Org tab state
   const [orgRepos, setOrgRepos] = useState<OnChainRepo[]>([]);
   const [orgBounties, setOrgBounties] = useState<Record<string, OnChainBounty[]>>({});
+  const [orgReviewOpen, setOrgReviewOpen] = useState<Set<string>>(new Set());
   const [loadingOrg, setLoadingOrg] = useState(false);
   const [expandedRepo, setExpandedRepo] = useState<bigint | null>(null);
   const [fundAmounts, setFundAmounts] = useState<Record<string, string>>({});
@@ -254,6 +255,15 @@ export default function Dashboard() {
     }
     return null;
   }, [bounties, myBounties, orgBounties]);
+
+  const toggleOrgReview = useCallback((key: string) => {
+    setOrgReviewOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const fireAudit = useCallback(async (
     repoId: bigint | null,
@@ -416,13 +426,62 @@ export default function Dashboard() {
   }
 
   // ── Org handlers ─────────────────────────────────────────────────────────────
-  async function handleApproveMerge(bountyId: bigint) {
-    setApprovingId(bountyId);
-    const repoId = resolveRepoIdForBounty(bountyId);
-    await runTx("Approving merge", () => approveMerge(Number(bountyId)), async () => {
+  async function handleApproveMerge(bounty: OnChainBounty) {
+    if (!bounty.prUrl) { setTxError("Missing PR URL for merge"); return; }
+    setApprovingId(bounty.id);
+    setTxError(""); setTxStatus("Checking PR status...");
+    const repoId = resolveRepoIdForBounty(bounty.id);
+    const mergeMethod = "merge";
+    let alreadyMerged = false;
+    try {
+      const statusRes = await fetch(`/api/github/pr-status?prUrl=${encodeURIComponent(bounty.prUrl)}`);
+      const statusData = await statusRes.json();
+      if (statusRes.ok && statusData?.merged) {
+        alreadyMerged = true;
+      }
+      if (!alreadyMerged) {
+        setTxStatus("Merging PR on GitHub...");
+        const res = await fetch("/api/github/merge-pr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prUrl: bounty.prUrl, mergeMethod }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const msg = data?.error || "Failed to merge PR";
+          setTxError(msg);
+          setTxStatus("");
+          setApprovingId(null);
+          return;
+        }
+        if (!data?.merged) {
+          const msg = data?.message || "PR merge was not completed";
+          // If already merged outside, still allow approve
+          if (!/already merged/i.test(msg)) {
+            setTxError(msg);
+            setTxStatus("");
+            setApprovingId(null);
+            return;
+          }
+          alreadyMerged = true;
+        }
+      }
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Failed to merge PR");
+      setTxStatus("");
+      setApprovingId(null);
+      return;
+    }
+
+    await runTx("Approving merge", () => approveMerge(Number(bounty.id)), async () => {
       await loadBounties();
       await loadOrgData();
-      await fireAudit(repoId, "approve_merge", { bountyId: bountyId.toString() });
+      await fireAudit(repoId, "merge_and_approve", {
+        bountyId: bounty.id.toString(),
+        prUrl: bounty.prUrl,
+        mergeMethod,
+        alreadyMerged,
+      });
     });
     setApprovingId(null);
   }
@@ -679,6 +738,9 @@ export default function Dashboard() {
                             <span className="font-mono text-sm font-bold text-muted-foreground">#{key}</span>
                             <span className={`border-2 px-1.5 py-0.5 font-mono text-sm font-bold uppercase ${SEV_STYLE[sev]}`}>{sev}</span>
                             <span className={`font-mono text-sm font-bold uppercase ${STATUS_STYLE[status]}`}>{status}</span>
+                            {isMerged && isAssignee && (
+                              <span className="border-2 border-neon-green bg-neon-green/10 px-1.5 py-0.5 font-mono text-sm font-bold uppercase text-neon-green">READY TO CLAIM</span>
+                            )}
                           </div>
                           <div className="mb-1 truncate font-mono text-sm font-bold">{b.title || "(Untitled)"}</div>
                           <div className="font-mono text-sm text-muted-foreground truncate">{b.githubIssueUrl} · {b.createdAt > 0n ? timeSince(b.createdAt) : "just now"}</div>
@@ -763,9 +825,9 @@ export default function Dashboard() {
                         {/* Org: approve/reject PR */}
                         {isPRSubmitted && isOwner && (
                           <div className="flex gap-2 flex-wrap">
-                            <button onClick={() => handleApproveMerge(b.id)} disabled={approvingId === b.id}
+                            <button onClick={() => handleApproveMerge(b)} disabled={approvingId === b.id}
                               className="brutal-btn flex items-center gap-1.5 border-neon-green bg-neon-green px-4 py-2 font-mono text-sm font-bold text-primary-foreground disabled:opacity-60">
-                              {approvingId === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} APPROVE MERGE
+                              {approvingId === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} APPROVE (MERGE IF NEEDED)
                             </button>
                             <button onClick={() => handleRejectPR(b.id)} disabled={rejectingId === b.id}
                               className="brutal-btn flex items-center gap-1.5 border-neon-red bg-neon-red/10 px-4 py-2 font-mono text-sm font-bold text-neon-red disabled:opacity-60">
@@ -960,6 +1022,7 @@ export default function Dashboard() {
                 const repoBounties = orgBounties[repoKey] ?? [];
                 const isExpanded = expandedRepo === repo.id;
                 const pendingPRs = repoBounties.filter((b) => b.status === 2).length;
+                const assignedCount = repoBounties.filter((b) => b.status === 1).length;
 
                 return (
                   <div key={repoKey} className={`brutal-card transition-all ${isExpanded ? "!border-neon-cyan" : ""}`}>
@@ -973,6 +1036,9 @@ export default function Dashboard() {
                           <span className="font-mono text-sm font-bold text-muted-foreground">REPO #{repoKey}</span>
                           {pendingPRs > 0 && (
                             <span className="border-2 border-neon-amber bg-neon-amber/10 px-1.5 py-0.5 font-mono text-sm font-bold text-neon-amber">{pendingPRs} PR{pendingPRs > 1 ? "s" : ""} TO REVIEW</span>
+                          )}
+                          {assignedCount > 0 && (
+                            <span className="border-2 border-neon-cyan bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-sm font-bold text-neon-cyan">{assignedCount} ASSIGNED</span>
                           )}
                           {!repo.isActive && <span className="border-2 border-neon-red bg-neon-red/10 px-1.5 py-0.5 font-mono text-sm font-bold text-neon-red">INACTIVE</span>}
                         </div>
@@ -1079,7 +1145,7 @@ export default function Dashboard() {
                                 {bIsAssigned && (
                                   <div className="font-mono text-sm text-muted-foreground">Assigned to: {b.assignedTo.slice(0,8)}…{b.assignedTo.slice(-4)}</div>
                                 )}
-                                {bIsPRSubmitted && b.prUrl && (
+                                {b.prUrl && (
                                   <a href={b.prUrl} target="_blank" rel="noreferrer" className="font-mono text-sm text-neon-cyan hover:underline flex items-center gap-1">
                                     PR: {b.prUrl} <ExternalLink className="h-3 w-3" />
                                   </a>
@@ -1111,9 +1177,9 @@ export default function Dashboard() {
                                   {/* Approve / Reject PR */}
                                   {bIsPRSubmitted && (
                                     <>
-                                      <button onClick={() => handleApproveMerge(b.id)} disabled={approvingId === b.id}
+                                      <button onClick={() => handleApproveMerge(b)} disabled={approvingId === b.id}
                                         className="brutal-btn flex items-center gap-1 border-neon-green bg-neon-green px-3 py-1 font-mono text-sm font-bold text-primary-foreground disabled:opacity-60">
-                                        {approvingId === b.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />} APPROVE
+                                        {approvingId === b.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />} APPROVE (MERGE IF NEEDED)
                                       </button>
                                       <button onClick={() => handleRejectPR(b.id)} disabled={rejectingId === b.id}
                                         className="brutal-btn flex items-center gap-1 border-neon-red bg-neon-red/10 px-3 py-1 font-mono text-sm font-bold text-neon-red disabled:opacity-60">
@@ -1122,11 +1188,18 @@ export default function Dashboard() {
                                     </>
                                   )}
 
+                                  {b.prUrl && (
+                                    <button onClick={() => toggleOrgReview(bKey)}
+                                      className="brutal-btn flex items-center gap-1 border-neon-cyan bg-neon-cyan/10 px-3 py-1 font-mono text-sm font-bold text-neon-cyan">
+                                      <Brain className="h-3 w-3" /> AI REVIEW
+                                    </button>
+                                  )}
+
                                   <a href={b.githubIssueUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-sm text-neon-cyan hover:underline">
                                     Issue <ExternalLink className="h-3 w-3" />
                                   </a>
                                 </div>
-                                {bIsPRSubmitted && b.prUrl && (
+                                {b.prUrl && orgReviewOpen.has(bKey) && (
                                   <PRAnalysisPanel prUrl={b.prUrl} issueUrl={b.githubIssueUrl} issueTitle={b.title} issueDescription={b.description} />
                                 )}
                               </div>
