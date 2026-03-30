@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
 // ── config ────────────────────────────────────────────────────────────────────
-const BACKEND_URL = "http://localhost:3005"; // Groq proxy
+const BACKEND_URL =
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
+const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function parseRepoURL(url) {
@@ -207,7 +209,7 @@ export default function CodeAnalyser() {
     setIsCreatingIssues(true);
     try {
       const toCreate = [...selectedFindings].map(i => findings[i]);
-      const res = await fetch("/api/github/create-issues", {
+      const res = await fetch(`${API_BASE}/api/github/create-issues`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

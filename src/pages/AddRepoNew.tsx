@@ -14,6 +14,7 @@ export default function AddRepo() {
 }
 
 export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
+  const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
   const [repoUrl, setRepoUrl] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +65,7 @@ export function AddRepoContent({ embedded = false }: { embedded?: boolean }) {
 
     try {
       const response = await fetch(
-        `/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`
+        `${API_BASE}/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`
       );
       const payload = (await response.json()) as RepoSnapshot | FetchFailurePayload;
 
