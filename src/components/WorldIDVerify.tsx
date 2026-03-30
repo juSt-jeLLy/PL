@@ -1,8 +1,34 @@
+import { useEffect, useState } from "react";
 import { useWorldID } from "@/hooks/useWorldID";
 import { Button } from "@/components/ui/button";
+import * as QRCode from "qrcode";
 
 export default function WorldIDVerify() {
   const { status, connectUrl, result, error, startVerification, reset } = useWorldID();
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function generate() {
+      if (status !== "waiting" || !connectUrl) {
+        setQrDataUrl(null);
+        return;
+      }
+
+      setQrDataUrl(null);
+      try {
+        const dataUrl = await QRCode.toDataURL(connectUrl, { width: 220, margin: 1 });
+        if (!cancelled) setQrDataUrl(dataUrl);
+      } catch {
+        if (!cancelled) setQrDataUrl(null);
+      }
+    }
+
+    void generate();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, connectUrl]);
 
   return (
     <div className="flex flex-col items-center gap-6 p-8 max-w-lg mx-auto">
@@ -35,6 +61,20 @@ export default function WorldIDVerify() {
             </a>
             ):
           </p>
+
+          <div className="flex items-center justify-center w-full">
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="World ID verification QR code"
+                className="w-56 h-56 border-2 border-border bg-background p-2 rounded"
+              />
+            ) : (
+              <div className="w-56 h-56 border-2 border-border bg-background p-2 rounded flex items-center justify-center text-xs text-muted-foreground">
+                Generating QR...
+              </div>
+            )}
+          </div>
 
           {/* Deep link button for mobile */}
           <a

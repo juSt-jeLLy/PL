@@ -11,12 +11,14 @@ import { ethers } from "ethers";
 import { AddRepoContent } from "./AddRepo";
 import WalletButton from "@/components/WalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import WorldIDVerify from "@/components/WorldIDVerify";
 import { useWallet } from "@/context/WalletContext";
 import { useContract } from "@/hooks/useContract";
 import { OnChainBounty, OnChainRepo, SEVERITY_FROM_NUM, STATUS_FROM_NUM } from "@/lib/contract";
 
 // ─── PR Analysis Component ───────────────────────────────────────────────────
 const BACKEND = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
+const STORAGE_KEY_VERIFIED_RESULT = "mergex:worldid_verified_result";
 
 interface PRAnalysisResult {
   verdict: "APPROVED" | "NEEDS_WORK" | "REJECTED";
@@ -180,6 +182,7 @@ const STATUS_STYLE: Record<string, string> = {
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { address, isConnected } = useWallet();
+  const [showWorldIdGate, setShowWorldIdGate] = useState(false);
   const {
     getAllBounties, getContributorBounties, getOrgRepos, getRepoBounties, getRepo,
     takeBounty, submitPR, claimBounty, claimExpiredBounty,
@@ -374,6 +377,20 @@ export default function Dashboard() {
 
   // ── Contributor handlers ─────────────────────────────────────────────────────
   async function handleTakeBounty(bountyId: bigint, amountWei: bigint) {
+    // Bot protection (UI gate): require a successful World ID verification in this browser session.
+    try {
+      const verified = !!localStorage.getItem(STORAGE_KEY_VERIFIED_RESULT);
+      if (!verified) {
+        setShowWorldIdGate(true);
+        setTxError("Verify your humanity before applying for bounties.");
+        return;
+      }
+    } catch {
+      setShowWorldIdGate(true);
+      setTxError("Verify your humanity before applying for bounties.");
+      return;
+    }
+
     const stakeEth = stakeInputs[bountyId.toString()] || "";
     if (!stakeEth) { setTxError("Enter stake amount (10–20% of bounty)"); return; }
     const stakeWei = ethers.parseEther(stakeEth);
@@ -628,7 +645,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="mt-auto border-t-2 border-border p-3 space-y-2.5">
-            {[{ label: "World Chain", dot: "status-dot-green" }, { label: "NEAR AI", dot: "status-dot-cyan" }, { label: "Filecoin", dot: "status-dot-green" }].map((s) => (
+            {[{ label: "World Chain", dot: "status-dot-green" }, { label: "AI", dot: "status-dot-cyan" }, { label: "Filecoin", dot: "status-dot-green" }].map((s) => (
               <div key={s.label} className="flex items-center gap-2">
                 <span className={`status-dot ${s.dot}`} />
                 <span className="font-mono text-sm font-bold uppercase text-sidebar-foreground">{s.label}</span>
@@ -697,6 +714,26 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2"><span className="status-dot status-dot-green" /><span className="font-mono text-sm font-bold text-neon-green">{openCount} OPEN</span></div>
                 </div>
               </div>
+
+              {showWorldIdGate && (
+                <div className="brutal-card p-4 md:p-6 border-2 border-neon-green bg-neon-green/5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-display text-lg font-extrabold uppercase text-neon-green">Human Verification Required</div>
+                      <div className="mt-1 font-mono text-sm text-muted-foreground">
+                        Complete World ID verification to apply for bounties.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowWorldIdGate(false)}
+                      className="brutal-btn border-border bg-background px-3 py-2 font-mono text-xs font-bold uppercase text-muted-foreground"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <WorldIDVerify />
+                </div>
+              )}
 
               {loadingBounties && (
                 <div className="flex items-center gap-2 py-8 justify-center font-mono text-sm text-muted-foreground">
