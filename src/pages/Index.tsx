@@ -28,7 +28,7 @@ const TECH_STACK = [
   },
   {
     layer: "Intelligence",
-    tech: "NEAR Private AI",
+    tech: "AI Agent",
     icon: Brain,
     color: "cyan" as const,
     description: "Autonomous agents that keep running after you close the tab. Private inference protects your IP.",
@@ -56,7 +56,7 @@ const HOW_IT_WORKS = [
   {
     step: "01",
     title: "Verify Your Humanity",
-    desc: "Connect World App and complete Orb verification. Your nullifierHash is stored on World Chain — only one account per human.",
+    desc: "Connect World App and complete verification. ",
     icon: Globe,
     color: "green" as const,
   },
@@ -69,8 +69,8 @@ const HOW_IT_WORKS = [
   },
   {
     step: "03",
-    title: "NEAR Agent Reviews Code",
-    desc: "When a PR is submitted, a NEAR Private AI agent spins up autonomously. It performs private inference — your code never touches a public LLM.",
+    title: "Agent Reviews Code",
+    desc: "When a PR is submitted, our AI agent spins up autonomously.",
     icon: Brain,
     color: "cyan" as const,
   },
@@ -84,16 +84,16 @@ const HOW_IT_WORKS = [
   {
     step: "05",
     title: "Bounty Released On-Chain",
-    desc: "The NEAR agent signals approval to your World Chain escrow contract. Payout is automatic — no human gatekeeper needed.",
+    desc: "The agent signals approval to your World Chain escrow contract. Payout is automatic — no human gatekeeper needed.",
     icon: CheckCircle,
     color: "green" as const,
   },
 ];
 
 const STATS = [
-  { label: "Human Verifications", value: "12,483", icon: Users, color: "green" as const },
-  { label: "Active Bounties", value: "374", icon: Star, color: "cyan" as const },
-  { label: "Agent Reviews Today", value: "1,209", icon: Activity, color: "amber" as const },
+  { label: "Human Verifications", value: "33", icon: Users, color: "green" as const },
+  { label: "Active Bounties", value: "", icon: Star, color: "cyan" as const },
+  { label: "Agent Reviews Today", value: "10", icon: Activity, color: "amber" as const },
   { label: "Human-to-Bot Ratio", value: "100%", icon: Shield, color: "green" as const },
 ];
 
@@ -117,7 +117,7 @@ const bgColor: Record<string, string> = {
 
 export default function Index() {
   const [terminalText, setTerminalText] = useState("");
-  const fullText = "Initializing mergeX 2026... World ID verified. NEAR agents online. Filecoin storage ready.";
+  const fullText = "Initializing mergeX 2026... World ID verified. Agents online. Filecoin storage ready.";
 
   useEffect(() => {
     let i = 0;
@@ -214,7 +214,7 @@ export default function Index() {
               className="brutal-btn group flex items-center gap-2 border-neon-green bg-neon-green px-8 py-4 font-mono text-sm text-primary-foreground"
             >
               <Shield className="h-4 w-4" />
-              Add Repo
+              Launch App
               <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <a
@@ -353,7 +353,7 @@ export default function Index() {
                   { label: "User", color: "green" },
                   { label: "World ID Gate", color: "green" },
                   { label: "World Chain", color: "green" },
-                  { label: "NEAR Agent", color: "cyan" },
+                  { label: "AI Agent", color: "cyan" },
                   { label: "Filecoin CID", color: "amber" },
                   { label: "Payout ✓", color: "green" },
                 ].map((node, i, arr) => (
@@ -388,7 +388,7 @@ export default function Index() {
           <div className="flex items-center gap-4 font-mono text-sm uppercase tracking-wider text-muted-foreground">
             <span>World Chain</span>
             <span>·</span>
-            <span>NEAR AI</span>
+            <span>AI</span>
             <span>·</span>
             <span>Filecoin</span>
             <span>·</span>
