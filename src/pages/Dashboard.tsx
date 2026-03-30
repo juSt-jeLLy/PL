@@ -16,7 +16,7 @@ import { useContract } from "@/hooks/useContract";
 import { OnChainBounty, OnChainRepo, SEVERITY_FROM_NUM, STATUS_FROM_NUM } from "@/lib/contract";
 
 // ─── PR Analysis Component ───────────────────────────────────────────────────
-const BACKEND = "http://localhost:3001";
+const BACKEND = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 
 interface PRAnalysisResult {
   verdict: "APPROVED" | "NEEDS_WORK" | "REJECTED";
@@ -283,7 +283,7 @@ export default function Dashboard() {
       } catch (err) {
         console.warn("audit bounties fetch failed:", err);
       }
-      await fetch("/api/audit-repo", {
+      await fetch(`${BACKEND}/api/audit-repo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -434,14 +434,14 @@ export default function Dashboard() {
     const mergeMethod = "merge";
     let alreadyMerged = false;
     try {
-      const statusRes = await fetch(`/api/github/pr-status?prUrl=${encodeURIComponent(bounty.prUrl)}`);
+      const statusRes = await fetch(`${BACKEND}/api/github/pr-status?prUrl=${encodeURIComponent(bounty.prUrl)}`);
       const statusData = await statusRes.json();
       if (statusRes.ok && statusData?.merged) {
         alreadyMerged = true;
       }
       if (!alreadyMerged) {
         setTxStatus("Merging PR on GitHub...");
-        const res = await fetch("/api/github/merge-pr", {
+        const res = await fetch(`${BACKEND}/api/github/merge-pr`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prUrl: bounty.prUrl, mergeMethod }),

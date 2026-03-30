@@ -1,4 +1,5 @@
-export const BACKEND_URL = "http://localhost:3005";
+export const BACKEND_URL =
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
 export const ALLOWED_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cpp", ".c", ".cs", ".rb", ".php", ".yaml", ".yml", ".json", ".sh"];
 export const IGNORED_PATHS = ["node_modules/", ".git/", "dist/", "build/", "vendor/", "__pycache__/", ".next/", "coverage/"];
 

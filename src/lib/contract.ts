@@ -1,7 +1,7 @@
 // Contract configuration and ABI for MergeXBounty
 
 export const CONTRACT_ADDRESS: string =
-  import.meta.env.VITE_CONTRACT_ADDRESS || "";
+  import.meta.env.VITE_CONTRACT_ADDRESS?.trim() || "";
 
 export const WORLD_CHAIN_SEPOLIA = {
   chainId: 4801,

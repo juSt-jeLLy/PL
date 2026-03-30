@@ -10,7 +10,7 @@ import WalletButton from "@/components/WalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OnChainRepo } from "@/lib/contract";
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") || "";
+const BACKEND = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 
 type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 

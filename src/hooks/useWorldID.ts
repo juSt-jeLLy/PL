@@ -4,6 +4,7 @@ import { IDKit, deviceLegacy } from "@worldcoin/idkit-core";
 const APP_ID = "app_b52cbede146e3f23a5dc57bdb12a630c"; 
 const ACTION = "verify";           
 const SIGNAL = "";                    
+const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 
 type VerifyStatus = "idle" | "loading" | "waiting" | "verifying" | "success" | "error";
 
@@ -21,7 +22,7 @@ export function useWorldID() {
 
     try {
       // Step 1: Get RP signature from backend
-      const rpSig = await fetch("/api/rp-signature", {
+      const rpSig = await fetch(`${API_BASE}/api/rp-signature`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: ACTION }),
@@ -53,7 +54,7 @@ export function useWorldID() {
       setStatus("verifying");
 
       // Step 5: Verify proof on backend
-      const verifyRes = await fetch("/api/verify-proof", {
+      const verifyRes = await fetch(`${API_BASE}/api/verify-proof`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ idkitResponse, action:ACTION }),

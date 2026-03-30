@@ -104,7 +104,8 @@ type CodeSuggestion = {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const BACKEND_URL =
-  import.meta.env.VITE_REPOSCAN_URL?.replace(/\/$/, "") || "/reposcan";
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
+const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 const ALLOWED_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cpp", ".c", ".cs", ".rb", ".php", ".yaml", ".yml", ".json", ".sh"];
 const IGNORED_PATHS = ["node_modules/", ".git/", "dist/", "build/", "vendor/", "__pycache__/", ".next/", "coverage/"];
 
@@ -374,7 +375,7 @@ export function AddRepoContent({
           console.warn("audit bounties fetch failed:", err);
         }
       }
-      await fetch("/api/audit-repo", {
+      await fetch(`${API_BASE}/api/audit-repo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -438,7 +439,7 @@ export function AddRepoContent({
 
   // ── Post GitHub issues ────────────────────────────────────────────────────
   const postIssues = async (items: Array<{ severity: string; type: string; file: string; line?: number | string | null; description: string; suggestion: string }>) => {
-    const res = await fetch("/api/github/create-issues", {
+    const res = await fetch(`${API_BASE}/api/github/create-issues`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repoUrl: result!.repo.fullName, findings: items }),
@@ -705,8 +706,18 @@ export function AddRepoContent({
     setRepoValueEth(null);
     setIssueBountiesCreated(false);
     try {
-      const response = await fetch(`/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`);
-      const rawPayload: unknown = await response.json();
+      const response = await fetch(`${API_BASE}/api/github/repo-snapshot?repoUrl=${encodeURIComponent(trimmedRepo)}`);
+      const rawText = await response.text();
+      let rawPayload: unknown = null;
+      try {
+        rawPayload = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        throw new Error(
+          response.ok
+            ? "Backend returned non-JSON data. Check VITE_BACKEND_URL deployment config."
+            : `GitHub fetch failed (${response.status}).`
+        );
+      }
       if (!response.ok) {
         const fp = (rawPayload ?? {}) as FetchFailurePayload;
         setResult(null);
@@ -757,7 +768,15 @@ export function AddRepoContent({
       return ok;
     } catch (fetchError: unknown) {
       setResult(null);
-      setError(fetchError instanceof Error ? fetchError.message : "Something went wrong.");
+      const message =
+        fetchError instanceof Error ? fetchError.message : "Something went wrong.";
+      if (/Failed to fetch/i.test(message)) {
+        setError(
+          `Cannot reach backend API (${API_BASE || "VITE_BACKEND_URL not set"}). Check deploy URL/CORS/backend status.`
+        );
+      } else {
+        setError(message);
+      }
       return false;
     } finally {
       setLoading(false);
