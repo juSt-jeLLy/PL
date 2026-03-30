@@ -11,12 +11,14 @@ import { ethers } from "ethers";
 import { AddRepoContent } from "./AddRepo";
 import WalletButton from "@/components/WalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import WorldIDVerify from "@/components/WorldIDVerify";
 import { useWallet } from "@/context/WalletContext";
 import { useContract } from "@/hooks/useContract";
 import { OnChainBounty, OnChainRepo, SEVERITY_FROM_NUM, STATUS_FROM_NUM } from "@/lib/contract";
 
 // ─── PR Analysis Component ───────────────────────────────────────────────────
 const BACKEND = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
+const STORAGE_KEY_VERIFIED_RESULT = "mergex:worldid_verified_result";
 
 interface PRAnalysisResult {
   verdict: "APPROVED" | "NEEDS_WORK" | "REJECTED";
@@ -180,6 +182,7 @@ const STATUS_STYLE: Record<string, string> = {
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { address, isConnected } = useWallet();
+  const [showWorldIdGate, setShowWorldIdGate] = useState(false);
   const {
     getAllBounties, getContributorBounties, getOrgRepos, getRepoBounties, getRepo,
     takeBounty, submitPR, claimBounty, claimExpiredBounty,
@@ -374,6 +377,20 @@ export default function Dashboard() {
 
   // ── Contributor handlers ─────────────────────────────────────────────────────
   async function handleTakeBounty(bountyId: bigint, amountWei: bigint) {
+    // Bot protection (UI gate): require a successful World ID verification in this browser session.
+    try {
+      const verified = !!localStorage.getItem(STORAGE_KEY_VERIFIED_RESULT);
+      if (!verified) {
+        setShowWorldIdGate(true);
+        setTxError("Verify your humanity before applying for bounties.");
+        return;
+      }
+    } catch {
+      setShowWorldIdGate(true);
+      setTxError("Verify your humanity before applying for bounties.");
+      return;
+    }
+
     const stakeEth = stakeInputs[bountyId.toString()] || "";
     if (!stakeEth) { setTxError("Enter stake amount (10–20% of bounty)"); return; }
     const stakeWei = ethers.parseEther(stakeEth);
@@ -420,6 +437,7 @@ export default function Dashboard() {
     await runTx("Claiming expired bounty", () => claimExpiredBounty(Number(bountyId)), async () => {
       await loadMyBounties();
       await loadBounties();
+      await loadOrgData();
       await fireAudit(repoId, "claim_expired_bounty", { bountyId: bountyId.toString() });
     });
     setClaimExpiredId(null);
@@ -628,7 +646,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="mt-auto border-t-2 border-border p-3 space-y-2.5">
-            {[{ label: "World Chain", dot: "status-dot-green" }, { label: "NEAR AI", dot: "status-dot-cyan" }, { label: "Filecoin", dot: "status-dot-green" }].map((s) => (
+            {[{ label: "World Chain", dot: "status-dot-green" }, { label: "AI", dot: "status-dot-cyan" }, { label: "Filecoin", dot: "status-dot-green" }].map((s) => (
               <div key={s.label} className="flex items-center gap-2">
                 <span className={`status-dot ${s.dot}`} />
                 <span className="font-mono text-sm font-bold uppercase text-sidebar-foreground">{s.label}</span>
@@ -698,6 +716,26 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {showWorldIdGate && (
+                <div className="brutal-card p-4 md:p-6 border-2 border-neon-green bg-neon-green/5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-display text-lg font-extrabold uppercase text-neon-green">Human Verification Required</div>
+                      <div className="mt-1 font-mono text-sm text-muted-foreground">
+                        Complete World ID verification to apply for bounties.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowWorldIdGate(false)}
+                      className="brutal-btn border-border bg-background px-3 py-2 font-mono text-xs font-bold uppercase text-muted-foreground"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <WorldIDVerify />
+                </div>
+              )}
+
               {loadingBounties && (
                 <div className="flex items-center gap-2 py-8 justify-center font-mono text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading on-chain bounties...
@@ -722,10 +760,12 @@ export default function Dashboard() {
                 const isAssigned = b.status === 1;
                 const isPRSubmitted = b.status === 2;
                 const isMerged = b.status === 3;
+                const isExpirable = isAssigned || isPRSubmitted;
                 const isExpanded = selectedId === b.id;
                 const key = b.id.toString();
                 const isOwner = !!address && b.org.toLowerCase() === address.toLowerCase();
                 const isAssignee = !!address && b.assignedTo.toLowerCase() === address.toLowerCase();
+                const { label: expLabel, expired: expExpired } = b.deadline > 0n ? deadlineLabel(b.deadline) : { label: "", expired: false };
 
                 return (
                   <div key={key} className={`brutal-card transition-all ${isExpanded ? "!border-neon-green !shadow-brutal-green" : ""}`}>
@@ -748,10 +788,11 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="text-right">
                             <div className="font-mono text-sm font-bold text-neon-green">{fmtEth(b.amount)} ETH</div>
-                            {isAssigned && b.deadline > 0n && (() => {
-                              const { label, expired } = deadlineLabel(b.deadline);
-                              return <div className={`font-mono text-sm flex items-center gap-1 justify-end ${expired ? "text-neon-red" : "text-neon-amber"}`}><Clock className="h-3 w-3" />{label}</div>;
-                            })()}
+                            {isExpirable && b.deadline > 0n && (
+                              <div className={`font-mono text-sm flex items-center gap-1 justify-end ${expExpired ? "text-neon-red" : "text-neon-amber"}`}>
+                                <Clock className="h-3 w-3" />{expLabel}
+                              </div>
+                            )}
                           </div>
                           {isOpen && !isOwner && (
                             <button onClick={(e) => { e.stopPropagation(); setSelectedId(b.id); }}
@@ -836,6 +877,14 @@ export default function Dashboard() {
                           </div>
                         )}
 
+                        {isExpirable && expExpired && isConnected && (
+                          <button onClick={() => handleClaimExpired(b.id)} disabled={claimExpiredId === b.id}
+                            className="brutal-btn flex items-center gap-1.5 border-neon-red bg-neon-red/10 px-4 py-2 font-mono text-sm font-bold text-neon-red disabled:opacity-60">
+                            {claimExpiredId === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                            {isAssigned ? "TRIGGER EXPIRY (ABANDONED)" : "TRIGGER EXPIRY (REVIEW TIMEOUT)"}
+                          </button>
+                        )}
+
                         {/* Contributor: claim after merge */}
                         {isMerged && isAssignee && (
                           <button onClick={() => handleClaimBounty(b.id)} disabled={claimingId === b.id}
@@ -888,6 +937,7 @@ export default function Dashboard() {
                 const isPRSubmitted = b.status === 2;
                 const isMerged = b.status === 3;
                 const isCompleted = b.status === 4;
+                const isExpirable = isAssigned || isPRSubmitted;
                 const { label: dlLabel, expired: dlExpired } = b.deadline > 0n ? deadlineLabel(b.deadline) : { label: "", expired: false };
 
                 return (
@@ -907,7 +957,7 @@ export default function Dashboard() {
                       <div className="shrink-0 text-right">
                         <div className="font-mono text-sm font-bold text-neon-green">{fmtEth(b.amount)} ETH</div>
                         <div className="font-mono text-sm text-muted-foreground">Stake: {fmtEth(b.contributorStake)} ETH</div>
-                        {isAssigned && b.deadline > 0n && (
+                        {isExpirable && b.deadline > 0n && (
                           <div className={`font-mono text-sm flex items-center gap-1 justify-end mt-1 ${dlExpired ? "text-neon-red" : "text-neon-amber"}`}>
                             <Clock className="h-3 w-3" />{dlLabel}
                           </div>
@@ -951,6 +1001,15 @@ export default function Dashboard() {
                         <div className="font-mono text-sm text-muted-foreground">
                           Submitted {b.prSubmittedAt > 0n ? timeSince(b.prSubmittedAt) : ""} — waiting for org to approve
                         </div>
+                        {dlExpired && (
+                          <div className="border-t-2 border-neon-red/30 pt-2">
+                            <div className="font-mono text-sm text-neon-red mb-2">Review deadline passed — anyone can trigger expiry (your full stake is returned)</div>
+                            <button onClick={() => handleClaimExpired(b.id)} disabled={claimExpiredId === b.id}
+                              className="brutal-btn flex items-center gap-1.5 border-neon-red bg-neon-red/10 px-3 py-1.5 font-mono text-sm font-bold text-neon-red disabled:opacity-60">
+                              {claimExpiredId === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />} TRIGGER EXPIRY
+                            </button>
+                          </div>
+                        )}
                         <PRAnalysisPanel prUrl={b.prUrl} issueUrl={b.githubIssueUrl} issueTitle={b.title} issueDescription={b.description} />
                       </div>
                     )}
@@ -1126,6 +1185,7 @@ export default function Dashboard() {
                             const bIsOpen = b.status === 0;
                             const bIsPRSubmitted = b.status === 2;
                             const bIsAssigned = b.status === 1;
+                            const bIsExpirable = bIsAssigned || bIsPRSubmitted;
                             const { label: dlLabel, expired: dlExpired } = b.deadline > 0n ? deadlineLabel(b.deadline) : { label: "", expired: false };
 
                             return (
@@ -1135,7 +1195,7 @@ export default function Dashboard() {
                                     <span className="font-mono text-sm text-muted-foreground">#{bKey}</span>
                                     <span className={`border-2 px-1.5 py-0.5 font-mono text-sm font-bold uppercase ${SEV_STYLE[bSev]}`}>{bSev}</span>
                                     <span className={`font-mono text-sm font-bold uppercase ${STATUS_STYLE[bStatus]}`}>{bStatus}</span>
-                                    {bIsAssigned && b.deadline > 0n && (
+                                    {bIsExpirable && b.deadline > 0n && (
                                       <span className={`font-mono text-sm font-bold ${dlExpired ? "text-neon-red" : "text-neon-amber"}`}><Clock className="h-3 w-3 inline mr-0.5" />{dlLabel}</span>
                                     )}
                                   </div>
@@ -1192,6 +1252,13 @@ export default function Dashboard() {
                                     <button onClick={() => toggleOrgReview(bKey)}
                                       className="brutal-btn flex items-center gap-1 border-neon-cyan bg-neon-cyan/10 px-3 py-1 font-mono text-sm font-bold text-neon-cyan">
                                       <Brain className="h-3 w-3" /> AI REVIEW
+                                    </button>
+                                  )}
+
+                                  {bIsExpirable && dlExpired && (
+                                    <button onClick={() => handleClaimExpired(b.id)} disabled={claimExpiredId === b.id}
+                                      className="brutal-btn flex items-center gap-1 border-neon-red bg-neon-red/10 px-3 py-1 font-mono text-sm font-bold text-neon-red disabled:opacity-60">
+                                      {claimExpiredId === b.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />} TRIGGER EXPIRY
                                     </button>
                                   )}
 

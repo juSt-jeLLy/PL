@@ -8,10 +8,23 @@ const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") ||
 
 type VerifyStatus = "idle" | "loading" | "waiting" | "verifying" | "success" | "error";
 
+const STORAGE_KEY_VERIFIED_RESULT = "mergex:worldid_verified_result";
+
+function safeLoadVerifiedResult(): object | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_VERIFIED_RESULT);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useWorldID() {
-  const [status, setStatus] = useState<VerifyStatus>("idle");
+  const [result, setResult] = useState<object | null>(() => safeLoadVerifiedResult());
+  const [status, setStatus] = useState<VerifyStatus>(() => (safeLoadVerifiedResult() ? "success" : "idle"));
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
-  const [result, setResult] = useState<object | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startVerification = async () => {
@@ -66,6 +79,11 @@ export function useWorldID() {
 
       setResult(verifyRes);
       setStatus("success");
+      try {
+        localStorage.setItem(STORAGE_KEY_VERIFIED_RESULT, JSON.stringify(verifyRes));
+      } catch {
+        /* ignore storage failures */
+      }
     } catch (err: unknown) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -78,6 +96,11 @@ export function useWorldID() {
     setConnectUrl(null);
     setResult(null);
     setError(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY_VERIFIED_RESULT);
+    } catch {
+      /* ignore storage failures */
+    }
   };
 
   return { status, connectUrl, result, error, startVerification, reset };
