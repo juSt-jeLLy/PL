@@ -1,5 +1,7 @@
 export const BACKEND_URL =
-  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") ||
+  import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") ||
+  "";
 export const ALLOWED_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cpp", ".c", ".cs", ".rb", ".php", ".yaml", ".yml", ".json", ".sh"];
 export const IGNORED_PATHS = ["node_modules/", ".git/", "dist/", "build/", "vendor/", "__pycache__/", ".next/", "coverage/"];
 
@@ -26,7 +28,12 @@ export function chunkCode(content: string, filePath: string, chunkSize = 250) {
 }
 
 export async function fetchFileContent(owner: string, repo: string, path: string) {
-  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`);
+  const normalizedPath = path
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${normalizedPath}`);
   if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.statusText}`);
   const data = await res.json();
   return atob(data.content.replace(/\n/g, ""));

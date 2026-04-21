@@ -123,7 +123,12 @@ function chunkCode(content: string, filePath: string, chunkSize = 250) {
 }
 
 async function fetchFileContent(owner: string, repo: string, path: string) {
-  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`);
+  const normalizedPath = path
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${normalizedPath}`);
   if (!res.ok) return null;
   const data = await res.json();
   if (data.encoding === "base64") return atob(data.content.replace(/\n/g, ""));

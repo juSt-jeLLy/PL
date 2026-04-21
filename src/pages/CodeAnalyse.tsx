@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 
 // ── config ────────────────────────────────────────────────────────────────────
 const BACKEND_URL =
-  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") ||
+  import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") ||
+  "";
 const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -46,7 +48,12 @@ async function fetchFileTree(owner, repo) {
 }
 
 async function fetchFileContent(owner, repo, path) {
-  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`);
+  const normalizedPath = path
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${normalizedPath}`);
   if (!res.ok) return null;
   const data = await res.json();
   if (data.encoding === "base64") return atob(data.content.replace(/\n/g, ""));

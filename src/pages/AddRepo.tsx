@@ -104,7 +104,9 @@ type CodeSuggestion = {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const BACKEND_URL =
-  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") || "/reposcan";
+  import.meta.env.VITE_REPOSCAN_URL?.trim()?.replace(/\/$/, "") ||
+  import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") ||
+  "";
 const API_BASE = import.meta.env.VITE_BACKEND_URL?.trim()?.replace(/\/$/, "") || "";
 const ALLOWED_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cpp", ".c", ".cs", ".rb", ".php", ".yaml", ".yml", ".json", ".sh"];
 const IGNORED_PATHS = ["node_modules/", ".git/", "dist/", "build/", "vendor/", "__pycache__/", ".next/", "coverage/"];
@@ -135,7 +137,12 @@ function formatEthValue(wei: bigint): string {
 }
 
 async function fetchFileContent(owner: string, repo: string, path: string) {
-  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`);
+  const normalizedPath = path
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const res = await fetch(`${BACKEND_URL}/api/github/repos/${owner}/${repo}/contents/${normalizedPath}`);
   if (!res.ok) return null;
   const data = await res.json();
   if (data.encoding === "base64") return atob(data.content.replace(/\n/g, ""));

@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://mergex-api-production.up.railway.app/api/:path*"
+      "destination": "https://mergex-api-vercel.vercel.app/api/:path*"
     },
     {
       "source": "/reposcan/api/:path*",
